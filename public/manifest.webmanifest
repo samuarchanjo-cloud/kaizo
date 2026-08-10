@@ -1,0 +1,12 @@
+{
+  "name": "KAIZO · Gestão Automotiva",
+  "short_name": "KAIZO",
+  "description": "Gestão completa de serviços automotivos.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090b",
+  "theme_color": "#07090b",
+  "icons": [
+    { "src": "/kaizo-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
