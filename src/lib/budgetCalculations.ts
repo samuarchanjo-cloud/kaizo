@@ -1,4 +1,4 @@
-import type { ServiceOrder, ServiceOrderPart } from "./types";
+import type { Budget, ServiceOrderPart } from "./types";
 
 export const isCustomerSuppliedPart = (part: ServiceOrderPart) => part.responsibility === "Cliente";
 
@@ -12,9 +12,9 @@ export const partMargin = (part: ServiceOrderPart) => {
   return customerTotal > 0 ? (partProfit(part) / customerTotal) * 100 : 0;
 };
 
-export const orderPartsCustomerTotal = (order: ServiceOrder) => order.parts.reduce((sum, part) => sum + partCustomerTotal(part), 0);
-export const orderLaborTotal = (order: ServiceOrder) => order.labor.reduce((sum, labor) => sum + labor.price, 0);
-export const orderCustomerTotal = (order: ServiceOrder) => orderPartsCustomerTotal(order) + orderLaborTotal(order);
-export const orderRealCost = (order: ServiceOrder) => order.parts.reduce((sum, part) => sum + partRealCost(part), 0);
-export const orderEstimatedProfit = (order: ServiceOrder) => orderCustomerTotal(order) - orderRealCost(order);
-export const hasCustomerSuppliedParts = (order: ServiceOrder) => order.parts.some(isCustomerSuppliedPart);
+export const orderPartsCustomerTotal = (order: Pick<Budget, "parts">) => order.parts.reduce((sum, part) => sum + partCustomerTotal(part), 0);
+export const orderLaborTotal = (order: Pick<Budget, "labor">) => order.labor.reduce((sum, labor) => sum + labor.price, 0);
+export const orderCustomerTotal = (order: Pick<Budget, "parts" | "labor">) => orderPartsCustomerTotal(order) + orderLaborTotal(order);
+export const orderRealCost = (order: Pick<Budget, "parts">) => order.parts.reduce((sum, part) => sum + partRealCost(part), 0);
+export const orderEstimatedProfit = (order: Pick<Budget, "parts" | "labor">) => orderCustomerTotal(order) - orderRealCost(order);
+export const hasCustomerSuppliedParts = (order: Pick<Budget, "parts">) => order.parts.some(isCustomerSuppliedPart);

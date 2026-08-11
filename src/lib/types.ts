@@ -1,17 +1,13 @@
-export type OrderStatus =
-  | "Em diagnóstico"
-  | "Orçamento enviado"
-  | "Aguardando aprovação"
-  | "Aprovado"
-  | "Recusado"
-  | "Em serviço"
-  | "Finalizado"
-  | "Cancelado"
-  | "Entregue";
-
+export type Priority = "Normal" | "Alta" | "Urgente";
+export type EntryStatus = "Em diagnóstico" | "Aguardando orçamento" | "Orçamento criado" | "Encerrado";
+export type BudgetStatus = "Rascunho" | "Aguardando aprovação" | "Aprovado" | "Recusado";
+export type ServiceOrderStatus = "Aguardando início" | "Em serviço" | "Finalizado" | "Entregue" | "Cancelado";
 export type PaymentStatus = "Pendente" | "Pago parcialmente" | "Pago";
 export type PaymentMethod = "PIX" | "Dinheiro" | "Débito" | "Crédito" | "Transferência" | "Outro";
-export type Priority = "Normal" | "Alta" | "Urgente";
+export type AppointmentStatus = "Agendado" | "Confirmado" | "Concluído" | "Cancelado";
+export type PostSaleStatus = "Pendente" | "Concluído" | "Adiado";
+export type NotificationKind = "budget-approved" | "budget-rejected" | "order-finished" | "post-sale" | "general";
+export type EntityKind = "entry" | "budget" | "order" | "appointment" | "post-sale";
 
 export interface CompanySettings {
   id: string;
@@ -46,6 +42,12 @@ export interface Vehicle {
   notes?: string;
 }
 
+export interface PartAdditionalCost {
+  id: string;
+  description: string;
+  value: number;
+}
+
 export interface ServiceOrderPart {
   id: string;
   name: string;
@@ -55,12 +57,6 @@ export interface ServiceOrderPart {
   unitPrice: number;
   responsibility: "Oficina" | "Cliente";
   additionalCosts: PartAdditionalCost[];
-}
-
-export interface PartAdditionalCost {
-  id: string;
-  description: string;
-  value: number;
 }
 
 export interface ServiceOrderLabor {
@@ -95,7 +91,7 @@ export interface TimelineEvent {
   description: string;
 }
 
-export interface ServiceOrder {
+export interface ServiceEntry {
   id: string;
   number: number;
   customerId: string;
@@ -106,14 +102,45 @@ export interface ServiceOrder {
   recommendations: string;
   tags: string[];
   priority: Priority;
-  dueDate: string;
+  initialDueDate: string;
   notes: string;
-  status: OrderStatus;
+  status: EntryStatus;
+  evidences: ServiceOrderEvidence[];
+  createdAt: string;
+  updatedAt: string;
+  timeline: TimelineEvent[];
+}
+
+export interface Budget {
+  id: string;
+  number: number;
+  entryId: string;
+  status: BudgetStatus;
+  parts: ServiceOrderPart[];
+  labor: ServiceOrderLabor[];
+  quoteMessage: string;
+  dueDate: string;
+  createdAt: string;
+  updatedAt: string;
+  timeline: TimelineEvent[];
+}
+
+export interface ServiceOrder {
+  id: string;
+  number: number;
+  entryId: string;
+  budgetId: string;
+  status: ServiceOrderStatus;
+  createdAt: string;
+  updatedAt: string;
+  timeline: TimelineEvent[];
+}
+
+export interface EvidenceRecord {
+  id: string;
   parts: ServiceOrderPart[];
   labor: ServiceOrderLabor[];
   evidences: ServiceOrderEvidence[];
-  quoteMessage: string;
-  createdAt: string;
   updatedAt: string;
   timeline: TimelineEvent[];
 }
@@ -127,10 +154,51 @@ export interface Payment {
   paidAt?: string;
 }
 
+export interface Appointment {
+  id: string;
+  customerId: string;
+  vehicleId: string;
+  service: string;
+  scheduledAt: string;
+  notes: string;
+  status: AppointmentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PostSaleFollowUp {
+  id: string;
+  orderId: string;
+  customerId: string;
+  vehicleId: string;
+  service: string;
+  scheduledAt: string;
+  notes: string;
+  status: PostSaleStatus;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface Notification {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  message: string;
+  entityKind?: EntityKind;
+  entityId?: string;
+  read: boolean;
+  createdAt: string;
+}
+
 export interface KaizoData {
   company: CompanySettings;
   customers: Customer[];
   vehicles: Vehicle[];
+  entries: ServiceEntry[];
+  budgets: Budget[];
   orders: ServiceOrder[];
   payments: Payment[];
+  appointments: Appointment[];
+  postSales: PostSaleFollowUp[];
+  notifications: Notification[];
 }

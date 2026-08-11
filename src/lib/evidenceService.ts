@@ -1,5 +1,5 @@
 import { mediaRepository } from "./mediaRepository";
-import type { EvidenceLinkedItemType, EvidenceType, ServiceOrder, ServiceOrderEvidence } from "./types";
+import type { EvidenceLinkedItemType, EvidenceRecord, EvidenceType, ServiceOrderEvidence } from "./types";
 
 const MAX_IMAGE_EDGE = 1600;
 const COMPRESSION_THRESHOLD = 900_000;
@@ -55,7 +55,7 @@ export async function compressEvidencePhoto(file: File): Promise<Blob> {
 }
 
 export const evidenceService = {
-  async add(order: ServiceOrder, input: NewEvidenceInput): Promise<ServiceOrder> {
+  async add(order: EvidenceRecord, input: NewEvidenceInput): Promise<EvidenceRecord> {
     const compressedPhoto = await compressEvidencePhoto(input.file);
     const storedMedia = await mediaRepository.save(compressedPhoto);
     const evidence: ServiceOrderEvidence = {
@@ -74,7 +74,7 @@ export const evidenceService = {
     return { ...order, evidences: [evidence, ...order.evidences] };
   },
 
-  async remove(order: ServiceOrder, evidenceId: string): Promise<ServiceOrder> {
+  async remove(order: EvidenceRecord, evidenceId: string): Promise<EvidenceRecord> {
     const evidence = order.evidences.find((item) => item.id === evidenceId);
     if (!evidence) return order;
     await mediaRepository.remove(evidence.mediaId);

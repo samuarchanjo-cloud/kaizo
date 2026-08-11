@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 import { CurrencyInput } from "@/components/CurrencyInput";
 import { Icon } from "@/components/Icon";
 import { orderLaborTotal, orderPartsCustomerTotal, orderRealCost, partAdditionalCost, partBaseCost, partCustomerTotal, partMargin, partProfit, partRealCost } from "@/lib/budgetCalculations";
-import type { PartAdditionalCost, ServiceOrder, ServiceOrderPart } from "@/lib/types";
+import type { Budget, PartAdditionalCost, ServiceOrderPart } from "@/lib/types";
 
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const currency = (value: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -46,7 +46,7 @@ function PartAddForm({ onAdd }: { onAdd: (part: ServiceOrderPart) => void }) {
   </form>;
 }
 
-function LaborAddForm({ onAdd }: { onAdd: (labor: ServiceOrder["labor"][number]) => void }) {
+function LaborAddForm({ onAdd }: { onAdd: (labor: Budget["labor"][number]) => void }) {
   const [resetKey, setResetKey] = useState(0);
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget);
@@ -56,7 +56,7 @@ function LaborAddForm({ onAdd }: { onAdd: (labor: ServiceOrder["labor"][number])
   return <form className="labor-add-form" onSubmit={submit}><label><span>Nome do serviço</span><input name="name" placeholder="Ex.: Troca da bomba d'água" required /></label><label><span>Tempo estimado</span><div className="hours-input"><input name="hours" inputMode="decimal" type="number" min="0.25" step="0.25" placeholder="1,5" required /><span>h</span></div></label><div className="part-field"><span>Valor da mão de obra</span><CurrencyInput key={resetKey} name="price" label="Valor da mão de obra" required /></div><button className="secondary-button" type="submit"><Icon name="plus" /> Adicionar serviço</button></form>;
 }
 
-export function BudgetEditor({ draft, setDraft, total, profit, onSave, onPreview, onFinalize, onWhatsApp }: { draft: ServiceOrder; setDraft: (order: ServiceOrder) => void; total: number; profit: number; onSave: (message: string) => void; onPreview: () => void; onFinalize: () => void; onWhatsApp: () => void }) {
+export function BudgetEditor({ draft, setDraft, total, profit, onSave, onPreview, onFinalize, onWhatsApp }: { draft: Budget; setDraft: (order: Budget) => void; total: number; profit: number; onSave: (message: string) => void; onPreview: () => void; onFinalize: () => void; onWhatsApp: () => void }) {
   const partsTotal = orderPartsCustomerTotal(draft);
   const laborTotal = orderLaborTotal(draft);
   const realCost = orderRealCost(draft);

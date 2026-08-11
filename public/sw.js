@@ -1,4 +1,4 @@
-const CACHE = "kaizo-shell-v2";
+const CACHE = "kaizo-shell-v3";
 const SHELL = ["/", "/manifest.webmanifest", "/kaizo-logo.png"];
 self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL))));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))));

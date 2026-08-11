@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { Icon } from "@/components/Icon";
 import { evidenceService } from "@/lib/evidenceService";
-import type { EvidenceLinkedItemType, EvidenceType, ServiceOrder, ServiceOrderEvidence } from "@/lib/types";
+import type { EvidenceLinkedItemType, EvidenceRecord, EvidenceType, ServiceOrderEvidence } from "@/lib/types";
 
 const formatEvidenceDate = (value: string) =>
   new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
@@ -33,7 +33,7 @@ function EvidencePhoto({ evidence, clientView = false }: { evidence: ServiceOrde
   return <img className={`evidence-photo ${clientView ? "client" : ""}`} src={photoUrl} alt={evidence.description} />;
 }
 
-export function EvidenceManager({ order, onSave }: { order: ServiceOrder; onSave: (order: ServiceOrder, message: string) => void }) {
+export function EvidenceManager({ order, onSave }: { order: EvidenceRecord; onSave: (order: EvidenceRecord, message: string) => void }) {
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -133,7 +133,7 @@ export function EvidenceManager({ order, onSave }: { order: ServiceOrder; onSave
   </div>;
 }
 
-export function ClientEvidenceGallery({ order }: { order: ServiceOrder }) {
+export function ClientEvidenceGallery({ order }: { order: EvidenceRecord }) {
   const visibleEvidence = order.evidences.filter((evidence) => evidence.showToCustomer);
   if (visibleEvidence.length === 0) return null;
 
