@@ -3,16 +3,19 @@ import { customerService, localRepository, paymentService, serviceOrderService, 
 import type { Customer, KaizoData, OrderStatus, PaymentMethod, ServiceOrder, Vehicle } from "@/lib/types";
 import { ClientEvidenceGallery, EvidenceManager } from "@/components/EvidenceGallery";
 import { NewOrderModal } from "@/components/NewOrderModal";
+import { Icon } from "@/components/Icon";
 import { openQuoteInWhatsApp } from "@/lib/whatsappService";
 
 type Page = "dashboard" | "orders" | "customers" | "vehicles" | "finance" | "settings";
 type ModalName = "customer" | "vehicle" | "order" | "payment" | "quote" | null;
 
-const icons: Record<string, string> = { dashboard: "⌂", orders: "▤", customers: "♙", vehicles: "◆", finance: "◒", settings: "⚙", plus: "+", search: "⌕", spark: "✦", arrow: "→", close: "×", menu: "☰", check: "✓", clock: "◷", money: "R$", history: "↺", edit: "✎", trash: "⌫", car: "◇" };
 const statusOptions: OrderStatus[] = ["Em diagnóstico", "Orçamento enviado", "Aguardando aprovação", "Aprovado", "Recusado", "Em serviço", "Finalizado", "Cancelado", "Entregue"];
 const tagOptions = ["Falha de ignição", "Revisão periódica", "Freio", "Suspensão", "Elétrica", "Estética", "Consumo", "Injeção eletrônica"];
 const nav: { id: Page; label: string }[] = [
   { id: "dashboard", label: "Visão geral" }, { id: "orders", label: "Ordens de serviço" }, { id: "customers", label: "Clientes" }, { id: "vehicles", label: "Veículos" }, { id: "finance", label: "Financeiro" }, { id: "settings", label: "Configurações" },
+];
+const mobileNavigation: Array<{ id: Page; label: string }> = [
+  { id: "dashboard", label: "Início" }, { id: "orders", label: "OS" }, { id: "customers", label: "Clientes" }, { id: "vehicles", label: "Veículos" }, { id: "finance", label: "Financeiro" }, { id: "settings", label: "Ajustes" },
 ];
 
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -22,7 +25,6 @@ const orderTotal = (order: ServiceOrder) => order.parts.reduce((sum, part) => su
 const orderCost = (order: ServiceOrder) => order.parts.reduce((sum, part) => sum + part.quantity * part.unitCost, 0) + order.labor.reduce((sum, labor) => sum + labor.estimatedHours * labor.hourlyRate, 0);
 const statusClass = (status: string) => `status status-${status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replaceAll(" ", "-")}`;
 
-function Icon({ name }: { name: string }) { return <span className="icon" aria-hidden="true">{icons[name] ?? "•"}</span>; }
 function StatusBadge({ status }: { status: string }) { return <span className={statusClass(status)}>{status}</span>; }
 
 function Modal({ title, subtitle, onClose, children, wide = false }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
@@ -36,7 +38,7 @@ function Modal({ title, subtitle, onClose, children, wide = false }: { title: st
 
 function Field({ label, children, span = false }: { label: string; children: React.ReactNode; span?: boolean }) { return <label className={`field ${span ? "field-span" : ""}`}><span>{label}</span>{children}</label>; }
 
-function EmptyState({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="empty-state"><span className="empty-symbol">◇</span><h3>{title}</h3><p>{text}</p>{action}</div>; }
+function EmptyState({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) { return <div className="empty-state"><span className="empty-symbol"><Icon name="orders" /></span><h3>{title}</h3><p>{text}</p>{action}</div>; }
 
 export default function KaizoApp() {
   const [data, setData] = useState<KaizoData>(() => localRepository.load());
@@ -74,7 +76,7 @@ export default function KaizoApp() {
   return <div className="app-shell" style={{ "--accent": data.company.accent } as CSSProperties}>
     <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
       <button className="brand" onClick={() => go("dashboard")} aria-label="Ir para a visão geral"><img src="/kaizo-logo.png" alt="" /><div><strong>KAIZO</strong><span>GESTÃO AUTOMOTIVA</span></div></button>
-      <div className="workspace-card"><span className="workspace-icon">K</span><div><strong>{data.company.name}</strong><small>{data.company.businessType}</small></div><span className="verified">✦</span></div>
+      <div className="workspace-card"><span className="workspace-icon">K</span><div><strong>{data.company.name}</strong><small>{data.company.businessType}</small></div><Icon name="spark" className="verified" /></div>
       <nav>{nav.map((item) => <button key={item.id} className={page === item.id && !selectedOrder ? "active" : ""} onClick={() => go(item.id)}><Icon name={item.id} /><span>{item.label}</span>{item.id === "orders" && <em>{data.orders.filter((order) => !["Finalizado", "Cancelado", "Entregue"].includes(order.status)).length}</em>}</button>)}</nav>
       <div className="sidebar-foot"><div className="offline-dot" /> <span>Dados salvos neste dispositivo</span></div>
     </aside>
@@ -93,6 +95,10 @@ export default function KaizoApp() {
         </>}
       </div>
     </main>
+
+    <nav className="mobile-bottom-nav" aria-label="Navegação principal">
+      {mobileNavigation.map((item) => { const active = selectedOrder ? item.id === "orders" : page === item.id; return <button key={item.id} className={active ? "active" : ""} aria-current={active ? "page" : undefined} onClick={() => go(item.id)}><Icon name={item.id} /><span>{item.label}</span></button>; })}
+    </nav>
 
     {modal === "customer" && <CustomerModal customer={editingCustomer} onClose={() => setModal(null)} onSave={(customer) => { commit(customerService.upsert(data, customer), editingCustomer ? "Cliente atualizado." : "Cliente cadastrado."); setModal(null); }} />}
     {modal === "vehicle" && <VehicleModal vehicle={editingVehicle} customers={data.customers} onClose={() => setModal(null)} onSave={(vehicle) => { commit(vehicleService.upsert(data, vehicle), editingVehicle ? "Veículo atualizado." : "Veículo cadastrado."); setModal(null); }} />}

@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
+import { Icon } from "@/components/Icon";
 import { evidenceService } from "@/lib/evidenceService";
 import type { EvidenceLinkedItemType, EvidenceType, ServiceOrder, ServiceOrderEvidence } from "@/lib/types";
 
@@ -128,7 +129,7 @@ export function EvidenceManager({ order, onSave }: { order: ServiceOrder; onSave
     </form>}
 
     {!showForm && error && <p className="form-error standalone-error" role="alert">{error}</p>}
-    {order.evidences.length === 0 ? <div className="card evidence-empty"><span>▧</span><h3>Nenhuma evidência registrada</h3><p>Adicione uma foto para documentar o diagnóstico ou o resultado do serviço.</p></div> : <div className="evidence-grid">{order.evidences.map((evidence) => <article className="card evidence-card" key={evidence.id}><div className="evidence-media"><EvidencePhoto evidence={evidence} /><span className={`evidence-type ${evidence.type === "Depois do serviço" ? "after" : "before"}`}>{evidence.type}</span></div><div className="evidence-content"><div className="evidence-meta"><span>{evidence.linkedItemType} · {evidence.linkedItemLabel}</span><time>{formatEvidenceDate(evidence.createdAt)}</time></div><h3>{evidence.description}</h3><div className="evidence-flags">{evidence.showToCustomer && <span>✓ Visível ao cliente</span>}{evidence.oldPartSeparated && <span>Peça antiga separada</span>}</div><button className="evidence-delete" onClick={() => removeEvidence(evidence)}>Excluir evidência</button></div></article>)}</div>}
+    {order.evidences.length === 0 ? <div className="card evidence-empty"><span><Icon name="camera" /></span><h3>Nenhuma evidência registrada</h3><p>Adicione uma foto para documentar o diagnóstico ou o resultado do serviço.</p></div> : <div className="evidence-grid">{order.evidences.map((evidence) => <article className="card evidence-card" key={evidence.id}><div className="evidence-media"><EvidencePhoto evidence={evidence} /><span className={`evidence-type ${evidence.type === "Depois do serviço" ? "after" : "before"}`}>{evidence.type}</span></div><div className="evidence-content"><div className="evidence-meta"><span>{evidence.linkedItemType} · {evidence.linkedItemLabel}</span><time>{formatEvidenceDate(evidence.createdAt)}</time></div><h3>{evidence.description}</h3><div className="evidence-flags">{evidence.showToCustomer && <span>✓ Visível ao cliente</span>}{evidence.oldPartSeparated && <span>Peça antiga separada</span>}</div><button className="evidence-delete" onClick={() => removeEvidence(evidence)}>Excluir evidência</button></div></article>)}</div>}
   </div>;
 }
 
