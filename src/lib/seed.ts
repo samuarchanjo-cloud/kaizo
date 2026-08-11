@@ -38,9 +38,9 @@ const orders: ServiceOrder[] = [
     tags: ["Falha de ignição", "Injeção eletrônica", "Consumo"], priority: "Alta", dueDate: "2026-08-11T17:00", notes: "Cliente precisa do carro para viagem.",
     status: "Aguardando aprovação",
     parts: [
-      { id: "p1", name: "Jogo de velas de ignição", supplier: "NGK", quantity: 1, unitCost: 260, unitPrice: 390 },
-      { id: "p2", name: "Bobina de ignição", supplier: "Bosch", quantity: 1, unitCost: 220, unitPrice: 340 },
-      { id: "p3", name: "Filtro de ar", supplier: "Mann", quantity: 1, unitCost: 48, unitPrice: 85 },
+      { id: "p1", name: "Jogo de velas de ignição", supplier: "NGK", quantity: 1, unitCost: 260, unitPrice: 390, responsibility: "Oficina", additionalCosts: [] },
+      { id: "p2", name: "Bobina de ignição", supplier: "Bosch", quantity: 1, unitCost: 220, unitPrice: 340, responsibility: "Oficina", additionalCosts: [] },
+      { id: "p3", name: "Filtro de ar", supplier: "Mann", quantity: 1, unitCost: 48, unitPrice: 85, responsibility: "Oficina", additionalCosts: [] },
     ],
     labor: [
       { id: "l1", name: "Diagnóstico eletrônico", estimatedHours: 1.5, hourlyRate: 80, price: 180 },
@@ -59,7 +59,7 @@ const orders: ServiceOrder[] = [
     id: "o2", number: 1246, customerId: "c2", vehicleId: "v2", mileageIn: 62300,
     evidences: [],
     reportedProblem: "Revisão periódica e ruído ao frear.", technicalNotes: "Pastilhas dianteiras no limite de desgaste.", recommendations: "Substituir pastilhas e revisar fluido.", tags: ["Revisão periódica", "Freio"], priority: "Normal", dueDate: "2026-08-10T18:00", notes: "",
-    status: "Em serviço", parts: [{ id: "p4", name: "Pastilhas de freio dianteiras", supplier: "Cobreq", quantity: 1, unitCost: 185, unitPrice: 290 }], labor: [{ id: "l4", name: "Troca de pastilhas e revisão", estimatedHours: 1.5, hourlyRate: 90, price: 280 }], quoteMessage: "Serviço aprovado e em execução.", createdAt: "2026-08-09T13:20:00.000Z", updatedAt: "2026-08-10T09:10:00.000Z", timeline: [event("e4", "2026-08-09T13:20:00.000Z", "OS criada", "Revisão periódica registrada."), event("e5", "2026-08-10T09:10:00.000Z", "Serviço iniciado", "Veículo direcionado para execução.")]
+    status: "Em serviço", parts: [{ id: "p4", name: "Pastilhas de freio dianteiras", supplier: "Cobreq", quantity: 1, unitCost: 185, unitPrice: 290, responsibility: "Oficina", additionalCosts: [] }], labor: [{ id: "l4", name: "Troca de pastilhas e revisão", estimatedHours: 1.5, hourlyRate: 90, price: 280 }], quoteMessage: "Serviço aprovado e em execução.", createdAt: "2026-08-09T13:20:00.000Z", updatedAt: "2026-08-10T09:10:00.000Z", timeline: [event("e4", "2026-08-09T13:20:00.000Z", "OS criada", "Revisão periódica registrada."), event("e5", "2026-08-10T09:10:00.000Z", "Serviço iniciado", "Veículo direcionado para execução.")]
   },
   {
     id: "o3", number: 1245, customerId: "c3", vehicleId: "v3", mileageIn: 47600,

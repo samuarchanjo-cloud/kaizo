@@ -11,7 +11,11 @@ export interface DataRepository {
 
 const normalizeData = (data: KaizoData): KaizoData => ({
   ...data,
-  orders: data.orders.map((order) => ({ ...order, evidences: order.evidences ?? [] })),
+  orders: data.orders.map((order) => ({
+    ...order,
+    evidences: order.evidences ?? [],
+    parts: order.parts.map((part) => ({ ...part, responsibility: part.responsibility ?? "Oficina", additionalCosts: part.additionalCosts ?? [] })),
+  })),
 });
 
 const cloneSeed = (): KaizoData => normalizeData(JSON.parse(JSON.stringify(seedData)) as KaizoData);

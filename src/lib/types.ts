@@ -53,6 +53,14 @@ export interface ServiceOrderPart {
   quantity: number;
   unitCost: number;
   unitPrice: number;
+  responsibility: "Oficina" | "Cliente";
+  additionalCosts: PartAdditionalCost[];
+}
+
+export interface PartAdditionalCost {
+  id: string;
+  description: string;
+  value: number;
 }
 
 export interface ServiceOrderLabor {
