@@ -63,6 +63,23 @@ export interface ServiceOrderLabor {
   price: number;
 }
 
+export type EvidenceType = "Antes do serviço" | "Depois do serviço";
+export type EvidenceLinkedItemType = "Diagnóstico" | "Peça" | "Serviço";
+
+export interface ServiceOrderEvidence {
+  id: string;
+  orderId: string;
+  mediaId: string;
+  description: string;
+  type: EvidenceType;
+  linkedItemType: EvidenceLinkedItemType;
+  linkedItemId?: string;
+  linkedItemLabel: string;
+  showToCustomer: boolean;
+  oldPartSeparated: boolean;
+  createdAt: string;
+}
+
 export interface TimelineEvent {
   id: string;
   date: string;
@@ -86,6 +103,7 @@ export interface ServiceOrder {
   status: OrderStatus;
   parts: ServiceOrderPart[];
   labor: ServiceOrderLabor[];
+  evidences: ServiceOrderEvidence[];
   quoteMessage: string;
   createdAt: string;
   updatedAt: string;
@@ -108,4 +126,3 @@ export interface KaizoData {
   orders: ServiceOrder[];
   payments: Payment[];
 }
-

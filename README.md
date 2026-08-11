@@ -1,30 +1,73 @@
 # KAIZO
 
-Aplicativo web/PWA de gestão de serviços automotivos. O protótipo funciona sem backend: clientes, veículos, ordens de serviço, orçamentos, aprovações, histórico e pagamentos são salvos localmente no navegador.
+Aplicativo React/PWA para gestão de serviços automotivos. Clientes, veículos, ordens de serviço, diagnósticos, orçamentos, aprovações, histórico e pagamentos funcionam sem backend e são persistidos localmente no navegador.
 
-## Como rodar
+## Stack oficial
 
-Requisitos: Node.js 22 ou superior.
+- React 19
+- Vite 8
+- TypeScript
+- Tailwind CSS 4
+- PWA com manifesto e service worker
+- Persistência local atrás de uma camada de repositório
+
+O projeto não usa backend, autenticação, Supabase, Next.js, Vinext, Wrangler, Cloudflare Workers, OpenNext ou adapters de runtime.
+
+## Desenvolvimento
+
+Requisito: Node.js 20.19 ou superior.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Abra `http://localhost:3000`.
+O Vite exibirá o endereço local no terminal.
 
-Para validar a versão de produção:
+## Build de produção
 
 ```bash
 npm run build
 ```
 
-## Dados locais
+O resultado é gerado em `dist/`.
 
-O app inicia com dados de demonstração e usa uma camada de repositório em `lib/repository.ts`. Nenhuma página acessa o armazenamento diretamente, deixando a persistência pronta para ser substituída por uma API/Supabase no futuro.
+Para testar exatamente o build de produção:
 
-Em **Configurações**, o botão “Restaurar dados de demonstração” limpa as alterações locais e volta ao estado inicial.
+```bash
+npm run preview
+```
+
+## Deploy na Vercel
+
+Importe o repositório na Vercel. O projeto já inclui `vercel.json` e usa:
+
+- Framework: Vite
+- Build command: `npm run build`
+- Output directory: `dist`
+
+Não são necessárias funções, adapters ou configurações adicionais.
+
+## Persistência local
+
+A implementação está em `src/lib/repository.ts`. A interface consome serviços de clientes, veículos, ordens, pagamentos e configurações, sem acessar `localStorage` diretamente.
+
+Os dados são locais a cada navegador/dispositivo. Em **Configurações**, “Restaurar dados de demonstração” volta ao estado inicial.
+
+### Fotos e evidências
+
+Os metadados das evidências ficam associados à OS, mas as imagens nunca são gravadas no `localStorage`. Fotos são redimensionadas/comprimidas quando necessário e persistidas como `Blob` no IndexedDB.
+
+- `src/lib/mediaRepository.ts`: contrato de armazenamento de mídia e implementação IndexedDB.
+- `src/lib/evidenceService.ts`: compressão, criação, leitura e exclusão das evidências.
+- `src/components/EvidenceGallery.tsx`: interface da oficina e galeria compacta exibida ao cliente.
+
+Para uma futura migração, implemente `MediaStorageRepository` com Supabase Storage e substitua o adapter exportado por `mediaRepository`; os componentes não precisam ser alterados.
 
 ## PWA
 
-O manifesto e o service worker ficam em `public/`. Em navegadores compatíveis, o KAIZO pode ser instalado e mantém o shell principal disponível offline.
+O manifesto e o service worker ficam em `public/`. Em navegadores compatíveis, o KAIZO pode ser instalado e reutiliza o shell em modo offline após a primeira visita.
+
+## Regra de arquitetura
+
+O ambiente permanente do KAIZO é React + Vite + TypeScript com deploy estático na Vercel. Consulte também `AGENTS.md` antes de alterações estruturais.

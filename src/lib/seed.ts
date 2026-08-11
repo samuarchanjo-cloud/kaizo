@@ -31,6 +31,7 @@ export const seedData: KaizoData = {
 const orders: ServiceOrder[] = [
   {
     id: "o1", number: 1247, customerId: "c1", vehicleId: "v1", mileageIn: 78650,
+    evidences: [],
     reportedProblem: "Luz de injeção acesa, perda de potência em subidas e consumo elevado.",
     technicalNotes: "Falha intermitente no cilindro 2. Bobina com resistência fora da especificação e bicos com vazão irregular.",
     recommendations: "Substituir bobina e velas, realizar limpeza de bicos e nova leitura do sistema após o serviço.",
@@ -56,20 +57,22 @@ const orders: ServiceOrder[] = [
   },
   {
     id: "o2", number: 1246, customerId: "c2", vehicleId: "v2", mileageIn: 62300,
+    evidences: [],
     reportedProblem: "Revisão periódica e ruído ao frear.", technicalNotes: "Pastilhas dianteiras no limite de desgaste.", recommendations: "Substituir pastilhas e revisar fluido.", tags: ["Revisão periódica", "Freio"], priority: "Normal", dueDate: "2026-08-10T18:00", notes: "",
     status: "Em serviço", parts: [{ id: "p4", name: "Pastilhas de freio dianteiras", supplier: "Cobreq", quantity: 1, unitCost: 185, unitPrice: 290 }], labor: [{ id: "l4", name: "Troca de pastilhas e revisão", estimatedHours: 1.5, hourlyRate: 90, price: 280 }], quoteMessage: "Serviço aprovado e em execução.", createdAt: "2026-08-09T13:20:00.000Z", updatedAt: "2026-08-10T09:10:00.000Z", timeline: [event("e4", "2026-08-09T13:20:00.000Z", "OS criada", "Revisão periódica registrada."), event("e5", "2026-08-10T09:10:00.000Z", "Serviço iniciado", "Veículo direcionado para execução.")]
   },
   {
     id: "o3", number: 1245, customerId: "c3", vehicleId: "v3", mileageIn: 47600,
+    evidences: [],
     reportedProblem: "Higienização interna e polimento técnico.", technicalNotes: "Pintura com micro riscos e bancos com manchas leves.", recommendations: "Manutenção da proteção a cada seis meses.", tags: ["Estética"], priority: "Normal", dueDate: "2026-08-10T15:00", notes: "",
     status: "Finalizado", parts: [], labor: [{ id: "l5", name: "Polimento técnico", estimatedHours: 4, hourlyRate: 80, price: 520 }, { id: "l6", name: "Higienização interna", estimatedHours: 3, hourlyRate: 70, price: 300 }], quoteMessage: "Seu veículo está pronto.", createdAt: "2026-08-08T08:00:00.000Z", updatedAt: "2026-08-10T13:00:00.000Z", timeline: [event("e6", "2026-08-08T08:00:00.000Z", "OS criada", "Serviços estéticos registrados."), event("e7", "2026-08-10T13:00:00.000Z", "Serviço finalizado", "Qualidade final conferida."), event("e8", "2026-08-10T13:10:00.000Z", "Pagamento registrado", "Pagamento integral via PIX.")]
   },
   {
     id: "o4", number: 1244, customerId: "c1", vehicleId: "v1", mileageIn: 77120,
+    evidences: [],
     reportedProblem: "Alinhamento e balanceamento.", technicalNotes: "Pneu dianteiro direito com desgaste irregular.", recommendations: "Reavaliar em 10 mil km.", tags: ["Suspensão"], priority: "Normal", dueDate: "2026-07-25T16:00", notes: "",
     status: "Cancelado", parts: [], labor: [{ id: "l7", name: "Alinhamento e balanceamento", estimatedHours: 1, hourlyRate: 60, price: 180 }], quoteMessage: "", createdAt: "2026-07-24T09:00:00.000Z", updatedAt: "2026-07-24T11:00:00.000Z", timeline: [event("e9", "2026-07-24T09:00:00.000Z", "OS criada", "Solicitação registrada."), event("e10", "2026-07-24T11:00:00.000Z", "OS cancelada", "Cancelamento solicitado pelo cliente.")]
   },
 ];
 
 seedData.orders = orders;
-

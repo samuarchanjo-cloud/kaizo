@@ -9,14 +9,19 @@ export interface DataRepository {
   reset(): KaizoData;
 }
 
-const cloneSeed = (): KaizoData => JSON.parse(JSON.stringify(seedData)) as KaizoData;
+const normalizeData = (data: KaizoData): KaizoData => ({
+  ...data,
+  orders: data.orders.map((order) => ({ ...order, evidences: order.evidences ?? [] })),
+});
+
+const cloneSeed = (): KaizoData => normalizeData(JSON.parse(JSON.stringify(seedData)) as KaizoData);
 
 export const localRepository: DataRepository = {
   load() {
     if (typeof window === "undefined") return cloneSeed();
     try {
       const saved = window.localStorage.getItem(STORAGE_KEY);
-      return saved ? (JSON.parse(saved) as KaizoData) : cloneSeed();
+      return saved ? normalizeData(JSON.parse(saved) as KaizoData) : cloneSeed();
     } catch {
       return cloneSeed();
     }
@@ -54,4 +59,3 @@ export const paymentService = {
 export const settingsService = {
   update: (data: KaizoData, company: KaizoData["company"]) => ({ ...data, company }),
 };
-
