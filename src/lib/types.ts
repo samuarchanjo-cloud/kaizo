@@ -1,13 +1,29 @@
 export type Priority = "Normal" | "Alta" | "Urgente";
-export type EntryStatus = "Em diagnóstico" | "Aguardando orçamento" | "Orçamento criado" | "Encerrado";
-export type BudgetStatus = "Rascunho" | "Aguardando aprovação" | "Aprovado" | "Recusado";
-export type ServiceOrderStatus = "Aguardando início" | "Em serviço" | "Finalizado" | "Entregue" | "Cancelado";
+export type EntryStatus =
+  "Em diagnóstico" | "Aguardando orçamento" | "Orçamento criado" | "Encerrado";
+export type BudgetStatus =
+  "Rascunho" | "Aguardando aprovação" | "Aprovado" | "Recusado";
+export type ServiceOrderStatus =
+  "Aguardando início" | "Em serviço" | "Finalizado" | "Entregue" | "Cancelado";
 export type PaymentStatus = "Pendente" | "Pago parcialmente" | "Pago";
-export type PaymentMethod = "PIX" | "Dinheiro" | "Débito" | "Crédito" | "Transferência" | "Outro";
-export type AppointmentStatus = "Agendado" | "Confirmado" | "Concluído" | "Cancelado";
+export type PaymentMethod =
+  "PIX" | "Dinheiro" | "Débito" | "Crédito" | "Transferência" | "Outro";
+export type AppointmentStatus =
+  "Agendado" | "Confirmado" | "Concluído" | "Cancelado";
 export type PostSaleStatus = "Pendente" | "Concluído" | "Adiado";
-export type NotificationKind = "budget-approved" | "budget-rejected" | "order-finished" | "post-sale" | "general";
-export type EntityKind = "entry" | "budget" | "order" | "appointment" | "post-sale";
+export type NotificationKind =
+  | "budget-approved"
+  | "budget-rejected"
+  | "order-finished"
+  | "post-sale"
+  | "general";
+export type EntityKind =
+  "entry" | "budget" | "order" | "appointment" | "post-sale";
+export type VehicleCategory =
+  "compact" | "hatch" | "sedan" | "suv" | "pickup" | "van" | "other";
+export type PricingMode =
+  "fixed" | "by_vehicle_category" | "starting_from" | "evaluation_required";
+export type DurationMode = "fixed" | "by_vehicle_category" | "estimated";
 
 export interface CompanySettings {
   id: string;
@@ -37,9 +53,27 @@ export interface Vehicle {
   version: string;
   year: number;
   color: string;
+  vehicleCategory: VehicleCategory;
+  vehiclePhoto?: string;
   mileage: number;
   fuel?: string;
   notes?: string;
+}
+
+export interface VehicleCategoryServiceRule {
+  price?: number;
+  durationMinutes?: number;
+}
+
+export interface ServiceDefinition {
+  id: string;
+  name: string;
+  pricingMode: PricingMode;
+  durationMode: DurationMode;
+  basePrice?: number;
+  startingPrice?: number;
+  baseDurationMinutes?: number;
+  categoryRules?: Partial<Record<VehicleCategory, VehicleCategoryServiceRule>>;
 }
 
 export interface PartAdditionalCost {

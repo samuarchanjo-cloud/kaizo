@@ -7,6 +7,11 @@ import {
 import { Icon } from "@/components/Icon";
 import { NewEntryModal } from "@/components/NewOrderModal";
 import {
+  VehicleColorPicker,
+  VehiclePreview,
+  VehicleThumbnail,
+} from "@/components/VehicleThumbnail";
+import {
   hasCustomerSuppliedParts,
   isCustomerSuppliedPart,
   orderCustomerTotal,
@@ -49,8 +54,13 @@ import type {
   ServiceOrder,
   ServiceOrderStatus,
   Vehicle,
+  VehicleCategory,
 } from "@/lib/types";
 import { openQuoteInWhatsApp } from "@/lib/whatsappService";
+import {
+  inferVehicleCategory,
+  vehicleCategoryOptions,
+} from "@/lib/vehiclePresentation";
 
 type Page =
   | "dashboard"
@@ -67,6 +77,8 @@ type Page =
   | "more";
 type Selection = { kind: "entry" | "budget" | "order"; id: string } | null;
 type ModalName = "entry" | "appointment" | "customer" | "vehicle" | null;
+type DashboardListFilter =
+  "active" | "todo" | "running" | "deliver-today" | "waiting-approval";
 
 const currency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -92,6 +104,19 @@ const sameLocalDay = (value: string) => {
   return (
     `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}` === todayKey()
   );
+};
+const isOrderDueToday = (data: KaizoData, order: ServiceOrder) => {
+  const budget = data.budgets.find((item) => item.id === order.budgetId);
+  return budget ? sameLocalDay(budget.dueDate) : false;
+};
+const isEntryInOperation = (data: KaizoData, entry: ServiceEntry) => {
+  const activeOrder = data.orders.some(
+    (order) =>
+      order.entryId === entry.id &&
+      order.status !== "Entregue" &&
+      order.status !== "Cancelado",
+  );
+  return entry.status !== "Encerrado" || activeOrder;
 };
 const dateInputValue = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -153,7 +178,23 @@ const moreNavigation = desktopNavigation.filter((item) =>
 );
 
 function StatusBadge({ status }: { status: string }) {
-  return <span className={statusClass(status)}>{status}</span>;
+  const normalized = status
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const success = ["aprovado", "pago", "finalizado", "entregue"].some((value) =>
+    normalized.includes(value),
+  );
+  const negative = ["recusado", "cancelado", "atrasado"].some((value) =>
+    normalized.includes(value),
+  );
+  const icon = success ? "check" : negative ? "close" : "clock";
+  return (
+    <span className={statusClass(status)}>
+      <Icon name={icon} />
+      {status}
+    </span>
+  );
 }
 function Modal({
   title,
@@ -332,6 +373,9 @@ export default function App() {
   const [editingAppointment, setEditingAppointment] =
     useState<Appointment | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [pageFilter, setPageFilter] = useState<DashboardListFilter | null>(
+    null,
+  );
   const [toast, setToast] = useState("");
 
   useEffect(() => {
@@ -339,7 +383,7 @@ export default function App() {
       navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
   useEffect(() => {
-    document.documentElement.style.setProperty("--accent", "#2563EB");
+    document.documentElement.style.setProperty("--accent", "#E5484D");
   }, []);
   const commit = (next: KaizoData, message?: string) => {
     setData(next);
@@ -349,12 +393,14 @@ export default function App() {
       window.setTimeout(() => setToast(""), 2600);
     }
   };
-  const navigate = (next: Page) => {
+  const navigate = (next: Page, filter: DashboardListFilter | null = null) => {
     setPage(next);
+    setPageFilter(filter);
     setSelection(null);
     setNotificationsOpen(false);
   };
   const openEntity = (kind: "entry" | "budget" | "order", id: string) => {
+    setPageFilter(null);
     setSelection({ kind, id });
     setPage(
       kind === "entry" ? "entries" : kind === "budget" ? "budgets" : "orders",
@@ -389,7 +435,7 @@ export default function App() {
   return (
     <div
       className="app-shell"
-      style={{ "--accent": "#2563EB" } as CSSProperties}
+      style={{ "--accent": "#E5484D" } as CSSProperties}
     >
       <aside className="sidebar">
         <button className="brand" onClick={() => navigate("dashboard")}>
@@ -511,6 +557,7 @@ export default function App() {
               {page === "entries" && (
                 <EntriesPage
                   data={data}
+                  initialFilter={pageFilter}
                   onOpen={(id) => openEntity("entry", id)}
                   onNew={() => setModal("entry")}
                 />
@@ -518,12 +565,14 @@ export default function App() {
               {page === "budgets" && (
                 <BudgetsPage
                   data={data}
+                  initialFilter={pageFilter}
                   onOpen={(id) => openEntity("budget", id)}
                 />
               )}
               {page === "orders" && (
                 <OrdersPage
                   data={data}
+                  initialFilter={pageFilter}
                   onOpen={(id) => openEntity("order", id)}
                 />
               )}
@@ -685,22 +734,91 @@ function Dashboard({
   data: KaizoData;
   onEntry: () => void;
   onAppointment: () => void;
-  onNavigate: (page: Page) => void;
+  onNavigate: (page: Page, filter?: DashboardListFilter | null) => void;
   onOpen: (kind: "entry" | "budget" | "order", id: string) => void;
 }) {
   const [period, setPeriod] = useState<PeriodKey>("today");
   const revenue = financeService.revenue(data, period);
-  const entriesToday = data.entries.filter((entry) =>
-    sameLocalDay(entry.createdAt),
+  const activeEntries = data.entries.filter((entry) =>
+    isEntryInOperation(data, entry),
   );
+  const activeVehicles = new Set(activeEntries.map((entry) => entry.vehicleId));
   const waiting = data.budgets.filter(
     (budget) => budget.status === "Aguardando aprovação",
   );
+  const toDo = data.orders.filter(
+    (order) => order.status === "Aguardando início",
+  );
   const running = data.orders.filter((order) => order.status === "Em serviço");
-  const ready = data.orders.filter((order) => order.status === "Finalizado");
+  const deliverToday = data.orders.filter(
+    (order) =>
+      order.status !== "Entregue" &&
+      order.status !== "Cancelado" &&
+      (order.status === "Finalizado" || isOrderDueToday(data, order)),
+  );
+  const orderServices = data.orders
+    .filter(
+      (order) =>
+        order.status !== "Entregue" &&
+        order.status !== "Cancelado" &&
+        (isOrderDueToday(data, order) ||
+          order.status === "Em serviço" ||
+          order.status === "Finalizado"),
+    )
+    .map((order) => {
+      const entry = data.entries.find((item) => item.id === order.entryId);
+      const budget = data.budgets.find((item) => item.id === order.budgetId);
+      return {
+        id: order.id,
+        kind: "order" as const,
+        entry,
+        budget,
+        vehicle: data.vehicles.find((item) => item.id === entry?.vehicleId),
+        customer: data.customers.find((item) => item.id === entry?.customerId),
+        service: budget?.labor[0]?.name ?? "Serviço autorizado",
+        status:
+          order.status === "Aguardando início"
+            ? "Para fazer"
+            : order.status === "Em serviço"
+              ? "Em execução"
+              : "Entregar hoje",
+        dueDate: budget?.dueDate ?? order.updatedAt,
+      };
+    });
+  const appointmentServices = data.appointments
+    .filter(
+      (appointment) =>
+        sameLocalDay(appointment.scheduledAt) &&
+        appointment.status !== "Cancelado" &&
+        appointment.status !== "Concluído",
+    )
+    .map((appointment) => ({
+      id: appointment.id,
+      kind: "appointment" as const,
+      entry: undefined,
+      budget: undefined,
+      vehicle: data.vehicles.find((item) => item.id === appointment.vehicleId),
+      customer: data.customers.find(
+        (item) => item.id === appointment.customerId,
+      ),
+      service: appointment.service,
+      status: "Para fazer",
+      dueDate: appointment.scheduledAt,
+    }));
+  const servicesToday = [...orderServices, ...appointmentServices].sort(
+    (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime(),
+  );
   const recentEntry = data.entries[0];
   const recentBudget = data.budgets[0];
   const recentOrder = data.orders[0];
+  const periodLabel: Record<PeriodKey, string> = {
+    today: "Faturamento de hoje",
+    yesterday: "Faturamento de ontem",
+    "7d": "Faturamento dos últimos 7 dias",
+    "30d": "Faturamento dos últimos 30 dias",
+    month: "Faturamento deste mês",
+    custom: "Faturamento do período",
+  };
   return (
     <>
       <div className="page-heading">
@@ -712,9 +830,9 @@ function Dashboard({
       </div>
       <section className="revenue-hero card">
         <div>
-          <span>Faturamento</span>
+          <span>{periodLabel[period]}</span>
           <strong>{currency(revenue)}</strong>
-          <small>Recebimentos confirmados no período</small>
+          <small>Somente pagamentos efetivamente registrados</small>
         </div>
         <PeriodFilter value={period} onChange={setPeriod} />
       </section>
@@ -725,103 +843,125 @@ function Dashboard({
         <button className="secondary-button" onClick={onAppointment}>
           <Icon name="agenda" /> Novo agendamento
         </button>
-        <button
-          className="secondary-button"
-          onClick={() => onNavigate("budgets")}
-        >
-          <Icon name="budgets" /> Ver orçamentos
-        </button>
       </section>
-      <div className="section-heading">
-        <div>
-          <h2>Operação hoje</h2>
-          <p>O que precisa da sua atenção agora.</p>
+      <section className="card operation-today">
+        <div className="section-heading">
+          <div>
+            <span className="section-label">OPERAÇÃO DO DIA</span>
+            <h2>Operação de hoje</h2>
+            <p>Uma leitura imediata do que está acontecendo agora.</p>
+          </div>
         </div>
-      </div>
-      <section className="operation-grid">
-        <OperationCard
-          label="Veículos em atendimento"
-          value={entriesToday.length}
-          tone="neutral"
-          onClick={() => onNavigate("entries")}
-        />
-        <OperationCard
-          label="Aguardando aprovação"
-          value={waiting.length}
-          tone="waiting"
-          onClick={() => onNavigate("budgets")}
-        />
-        <OperationCard
-          label="Em serviço"
-          value={running.length}
-          tone="process"
-          onClick={() => onNavigate("orders")}
-        />
-        <OperationCard
-          label="Prontos para entrega"
-          value={ready.length}
-          tone="success"
-          onClick={() => onNavigate("orders")}
-        />
+        <div className="operation-grid">
+          <OperationCard
+            label="Veículos em atendimento"
+            value={activeVehicles.size}
+            tone="neutral"
+            onClick={() => onNavigate("entries", "active")}
+          />
+          <OperationCard
+            label="Para fazer"
+            value={toDo.length}
+            tone="todo"
+            onClick={() => onNavigate("orders", "todo")}
+          />
+          <OperationCard
+            label="Em execução"
+            value={running.length}
+            tone="process"
+            onClick={() => onNavigate("orders", "running")}
+          />
+          <OperationCard
+            label="Entregar hoje"
+            value={deliverToday.length}
+            tone="delivery"
+            onClick={() => onNavigate("orders", "deliver-today")}
+          />
+        </div>
       </section>
-      <section className="dashboard-grid new-dashboard-grid">
-        <div className="card service-today">
+      <section className="card service-today">
+        <div className="card-head">
+          <div>
+            <h2>Serviços de hoje</h2>
+            <p>Agendados, autorizados e em execução no dia.</p>
+          </div>
+          <button className="text-button" onClick={() => onNavigate("orders")}>
+            Ver todos <Icon name="arrow" />
+          </button>
+        </div>
+        {servicesToday.slice(0, 4).map((service) => (
+          <button
+            className="compact-service-row"
+            key={`${service.kind}-${service.id}`}
+            onClick={() =>
+              service.kind === "order"
+                ? onOpen("order", service.id)
+                : onNavigate("agenda")
+            }
+          >
+            <VehicleThumbnail vehicle={service.vehicle} />
+            <span>
+              <strong>
+                {service.vehicle?.brand} {service.vehicle?.model}
+              </strong>
+              <small>
+                {service.vehicle?.plate} · {service.customer?.name}
+              </small>
+              <em>{service.service}</em>
+            </span>
+            <span>
+              <StatusBadge status={service.status} />
+              <small>{dateTime(service.dueDate)}</small>
+            </span>
+          </button>
+        ))}
+        {servicesToday.length === 0 && (
+          <p className="muted padded-copy">
+            Nenhum serviço previsto para hoje.
+          </p>
+        )}
+      </section>
+      <section className="dashboard-grid new-dashboard-grid dashboard-secondary-grid">
+        <div className="card pending-budgets-card">
           <div className="card-head">
             <div>
-              <h2>Em serviço hoje</h2>
-              <p>Execuções em andamento.</p>
+              <h2>Orçamentos aguardando aprovação</h2>
+              <p>Etapa comercial, separada da execução.</p>
             </div>
             <button
               className="text-button"
-              onClick={() => onNavigate("orders")}
+              onClick={() => onNavigate("budgets", "waiting-approval")}
             >
               Ver todos <Icon name="arrow" />
             </button>
           </div>
-          {running.slice(0, 3).map((order) => {
+          {waiting.slice(0, 3).map((budget) => {
             const entry = data.entries.find(
-              (item) => item.id === order.entryId,
+              (item) => item.id === budget.entryId,
             );
             const vehicle = data.vehicles.find(
               (item) => item.id === entry?.vehicleId,
             );
-            const customer = data.customers.find(
-              (item) => item.id === entry?.customerId,
-            );
-            const budget = data.budgets.find(
-              (item) => item.id === order.budgetId,
-            );
             return (
               <button
-                className="compact-service-row"
-                key={order.id}
-                onClick={() => onOpen("order", order.id)}
+                className="pending-budget-row"
+                key={budget.id}
+                onClick={() => onOpen("budget", budget.id)}
               >
-                <span className="vehicle-mark">
-                  <Icon name="car" />
-                </span>
+                <VehicleThumbnail vehicle={vehicle} />
                 <span>
                   <strong>
                     {vehicle?.brand} {vehicle?.model}
                   </strong>
-                  <small>
-                    {vehicle?.plate} · {customer?.name}
-                  </small>
-                  <em>{budget?.labor[0]?.name ?? "Serviço autorizado"}</em>
+                  <small>Orçamento #{budget.number}</small>
                 </span>
-                <span>
-                  <StatusBadge status={order.status} />
-                  <small>
-                    {budget ? dateTime(budget.dueDate) : "Sem previsão"}
-                  </small>
-                </span>
+                <strong>{currency(orderCustomerTotal(budget))}</strong>
+                <StatusBadge status={budget.status} />
               </button>
             );
           })}
-          {running.length === 0 && (
-            <p className="muted padded-copy">
-              Nenhum veículo em serviço neste momento.
-            </p>
+          {waiting.length === 0 && (
+            <p className="muted padded-copy">Nenhuma aprovação pendente.</p>
           )}
         </div>
         <div className="card recent-flow">
@@ -895,10 +1035,12 @@ function EntriesPage({
   data,
   onOpen,
   onNew,
+  initialFilter,
 }: {
   data: KaizoData;
   onOpen: (id: string) => void;
   onNew: () => void;
+  initialFilter?: DashboardListFilter | null;
 }) {
   const [search, setSearch] = useState("");
   const shown = data.entries.filter((entry) => {
@@ -906,9 +1048,12 @@ function EntriesPage({
       (item) => item.id === entry.customerId,
     );
     const vehicle = data.vehicles.find((item) => item.id === entry.vehicleId);
-    return `${entry.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
-      .toLowerCase()
-      .includes(search.toLowerCase());
+    return (
+      (initialFilter !== "active" || isEntryInOperation(data, entry)) &&
+      `${entry.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    );
   });
   return (
     <>
@@ -947,12 +1092,16 @@ function EntriesPage({
 function BudgetsPage({
   data,
   onOpen,
+  initialFilter,
 }: {
   data: KaizoData;
   onOpen: (id: string) => void;
+  initialFilter?: DashboardListFilter | null;
 }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"Todos" | BudgetStatus>("Todos");
+  const [filter, setFilter] = useState<"Todos" | BudgetStatus>(
+    initialFilter === "waiting-approval" ? "Aguardando aprovação" : "Todos",
+  );
   const statuses: Array<"Todos" | BudgetStatus> = [
     "Todos",
     "Rascunho",
@@ -1029,20 +1178,51 @@ function BudgetsPage({
 function OrdersPage({
   data,
   onOpen,
+  initialFilter,
 }: {
   data: KaizoData;
   onOpen: (id: string) => void;
+  initialFilter?: DashboardListFilter | null;
 }) {
   const [search, setSearch] = useState("");
+  type OrderFilter = "Todos" | ServiceOrderStatus | "Entregar hoje";
+  const [filter, setFilter] = useState<OrderFilter>(
+    initialFilter === "todo"
+      ? "Aguardando início"
+      : initialFilter === "running"
+        ? "Em serviço"
+        : initialFilter === "deliver-today"
+          ? "Entregar hoje"
+          : "Todos",
+  );
+  const filters: OrderFilter[] = [
+    "Todos",
+    "Aguardando início",
+    "Em serviço",
+    "Finalizado",
+    "Entregar hoje",
+    "Entregue",
+    "Cancelado",
+  ];
   const shown = data.orders.filter((order) => {
     const entry = data.entries.find((item) => item.id === order.entryId);
     const customer = data.customers.find(
       (item) => item.id === entry?.customerId,
     );
     const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
-    return `${order.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
-      .toLowerCase()
-      .includes(search.toLowerCase());
+    const matchesFilter =
+      filter === "Todos" ||
+      (filter === "Entregar hoje"
+        ? order.status !== "Entregue" &&
+          order.status !== "Cancelado" &&
+          (order.status === "Finalizado" || isOrderDueToday(data, order))
+        : order.status === filter);
+    return (
+      matchesFilter &&
+      `${order.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
+        .toLowerCase()
+        .includes(search.toLowerCase())
+    );
   });
   return (
     <>
@@ -1052,11 +1232,24 @@ function OrdersPage({
           <p>Somente serviços autorizados aparecem aqui.</p>
         </div>
       </div>
-      <Search
-        value={search}
-        onChange={setSearch}
-        placeholder="Buscar OS, cliente, placa ou veículo"
-      />
+      <div className="toolbar">
+        <Search
+          value={search}
+          onChange={setSearch}
+          placeholder="Buscar OS, cliente, placa ou veículo"
+        />
+        <div className="filter-pills">
+          {filters.map((item) => (
+            <button
+              key={item}
+              className={filter === item ? "active" : ""}
+              onClick={() => setFilter(item)}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="record-list">
         {shown.map((order) => {
           const entry = data.entries.find((item) => item.id === order.entryId);
@@ -1078,6 +1271,12 @@ function OrdersPage({
           );
         })}
       </div>
+      {shown.length === 0 && (
+        <EmptyState
+          title="Nenhuma OS encontrada"
+          text="Ajuste os filtros ou aguarde uma nova autorização de serviço."
+        />
+      )}
     </>
   );
 }
@@ -1105,9 +1304,13 @@ function RecordRow({
   const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
   return (
     <button className="record-row" onClick={onClick}>
-      <span className="record-icon">
-        <Icon name={icon} />
-      </span>
+      {vehicle ? (
+        <VehicleThumbnail vehicle={vehicle} />
+      ) : (
+        <span className="record-icon">
+          <Icon name={icon} />
+        </span>
+      )}
       <span className="record-main">
         <small>{number}</small>
         <strong>
@@ -2088,7 +2291,7 @@ function VehiclesPage({
                 onClick={() => setSelectedId(vehicle.id)}
               >
                 <div className="vehicle-visual">
-                  <Icon name="car" />
+                  <VehicleThumbnail vehicle={vehicle} />
                   <span>{vehicle.year}</span>
                 </div>
                 <strong>
@@ -2114,6 +2317,7 @@ function VehiclesPage({
             <p>
               {selected.version} · {selected.year}
             </p>
+            <VehiclePreview vehicle={selected} />
             <div className="vehicle-summary">
               <div>
                 <small>Cliente</small>
@@ -2268,6 +2472,7 @@ function AgendaPage({
           return (
             <article className="card agenda-card" key={appointment.id}>
               <time>{dateTime(appointment.scheduledAt)}</time>
+              <VehicleThumbnail vehicle={vehicle} />
               <div>
                 <strong>{appointment.service}</strong>
                 <span>
@@ -2733,10 +2938,10 @@ function SettingsPage({
           </Field>
         </div>
         <div className="identity-note">
-          <span className="blue-swatch" />
+          <span className="brand-swatch" />
           <div>
             <strong>Identidade oficial KAIZO</strong>
-            <small>Dark Navy + Electric Blue · #2563EB</small>
+            <small>Dark Graphite + Red Coral · #E5484D</small>
           </div>
         </div>
         <div className="form-footer">
@@ -2903,6 +3108,13 @@ function VehicleModal({
   onClose: () => void;
   onSave: (vehicle: Vehicle) => void;
 }) {
+  const [brand, setBrand] = useState(vehicle?.brand ?? "");
+  const [model, setModel] = useState(vehicle?.model ?? "");
+  const [color, setColor] = useState(vehicle?.color ?? "Prata");
+  const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>(
+    vehicle?.vehicleCategory ?? inferVehicleCategory(vehicle?.model ?? ""),
+  );
+
   return (
     <Modal
       title={vehicle ? "Editar veículo" : "Novo veículo"}
@@ -2922,11 +3134,21 @@ function VehicleModal({
             version: String(form.get("version")),
             year: Number(form.get("year")),
             color: String(form.get("color")),
+            vehicleCategory,
             mileage: Number(form.get("mileage")),
             fuel: String(form.get("fuel")) || undefined,
           });
         }}
       >
+        <VehiclePreview
+          vehicle={{
+            brand,
+            model,
+            color,
+            vehicleCategory,
+            vehiclePhoto: vehicle?.vehiclePhoto,
+          }}
+        />
         <div className="form-grid">
           <Field label="Cliente" span>
             <select
@@ -2943,10 +3165,25 @@ function VehicleModal({
             </select>
           </Field>
           <Field label="Marca">
-            <input name="brand" defaultValue={vehicle?.brand} required />
+            <input
+              name="brand"
+              value={brand}
+              onChange={(event) => setBrand(event.target.value)}
+              required
+            />
           </Field>
           <Field label="Modelo">
-            <input name="model" defaultValue={vehicle?.model} required />
+            <input
+              name="model"
+              value={model}
+              onChange={(event) => {
+                const nextModel = event.target.value;
+                setModel(nextModel);
+                if (vehicleCategory === "other")
+                  setVehicleCategory(inferVehicleCategory(nextModel));
+              }}
+              required
+            />
           </Field>
           <Field label="Versão">
             <input name="version" defaultValue={vehicle?.version} />
@@ -2971,8 +3208,30 @@ function VehicleModal({
             />
           </Field>
           <Field label="Cor">
-            <input name="color" defaultValue={vehicle?.color} />
+            <input
+              name="color"
+              value={color}
+              onChange={(event) => setColor(event.target.value)}
+            />
           </Field>
+          <Field label="Categoria do veículo">
+            <select
+              value={vehicleCategory}
+              onChange={(event) =>
+                setVehicleCategory(event.target.value as VehicleCategory)
+              }
+            >
+              {vehicleCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="field field-span">
+            <span>Cores rápidas</span>
+            <VehicleColorPicker value={color} onChange={setColor} />
+          </div>
           <Field label="Quilometragem">
             <input
               name="mileage"
