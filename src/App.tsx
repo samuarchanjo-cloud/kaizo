@@ -13,11 +13,7 @@ import {
 } from "@/components/EvidenceGallery";
 import { Icon } from "@/components/Icon";
 import { NewEntryModal } from "@/components/NewOrderModal";
-import {
-  VehicleColorPicker,
-  VehiclePreview,
-  VehicleThumbnail,
-} from "@/components/VehicleThumbnail";
+import { localVehicleCatalog } from "@/data/vehicleCatalog";
 import {
   hasCustomerSuppliedParts,
   isCustomerSuppliedPart,
@@ -63,7 +59,12 @@ import type {
   Vehicle,
   VehicleCategory,
 } from "@/lib/types";
-import { openQuoteInWhatsApp } from "@/lib/whatsappService";
+import {
+  openApprovalConfirmationInWhatsApp,
+  openFinishedServiceInWhatsApp,
+  openQuoteInWhatsApp,
+  openRejectionFollowUpInWhatsApp,
+} from "@/lib/whatsappService";
 import {
   inferVehicleCategory,
   vehicleCategoryOptions,
@@ -86,7 +87,7 @@ type Selection = { kind: "entry" | "budget" | "order"; id: string } | null;
 type ModalName = "entry" | "appointment" | "customer" | "vehicle" | null;
 type ThemePreference = "light" | "dark" | "system";
 type DashboardListFilter =
-  "active" | "todo" | "running" | "deliver-today" | "waiting-approval";
+  "active" | "running" | "ready" | "waiting-approval";
 
 const currency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -113,18 +114,8 @@ const sameLocalDay = (value: string) => {
     `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}` === todayKey()
   );
 };
-const isOrderDueToday = (data: KaizoData, order: ServiceOrder) => {
-  const budget = data.budgets.find((item) => item.id === order.budgetId);
-  return budget ? sameLocalDay(budget.dueDate) : false;
-};
 const isEntryInOperation = (data: KaizoData, entry: ServiceEntry) => {
-  const activeOrder = data.orders.some(
-    (order) =>
-      order.entryId === entry.id &&
-      order.status !== "Entregue" &&
-      order.status !== "Cancelado",
-  );
-  return entry.status !== "Encerrado" || activeOrder;
+  return !data.budgets.some((budget) => budget.entryId === entry.id);
 };
 const dateInputValue = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -776,15 +767,21 @@ function Dashboard({
   onOpen: (kind: "entry" | "budget" | "order", id: string) => void;
 }) {
   const [period, setPeriod] = useState<PeriodKey>("today");
-  const revenue = financeService.revenue(data, period);
-  const todayRevenue = financeService.revenue(data, "today");
-  const yesterdayRevenue = financeService.revenue(data, "yesterday");
-  const revenueVariation = yesterdayRevenue
-    ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
-    : todayRevenue
+  const comparison = financeService.comparison(data, period);
+  const revenue = comparison.current;
+  const revenueVariation = comparison.previous
+    ? ((comparison.current - comparison.previous) / comparison.previous) * 100
+    : comparison.current
       ? 100
       : 0;
-  const revenueTrend = financeService.chart(data, 7);
+  const revenueTrend = financeService.chart(
+    data,
+    period === "30d"
+      ? 30
+      : period === "month"
+        ? Math.max(1, new Date().getDate())
+        : 7,
+  );
   const activeEntries = data.entries.filter((entry) =>
     isEntryInOperation(data, entry),
   );
@@ -792,24 +789,14 @@ function Dashboard({
   const waiting = data.budgets.filter(
     (budget) => budget.status === "Aguardando aprovação",
   );
-  const toDo = data.orders.filter(
-    (order) => order.status === "Aguardando início",
-  );
   const running = data.orders.filter((order) => order.status === "Em serviço");
-  const deliverToday = data.orders.filter(
-    (order) =>
-      order.status !== "Entregue" &&
-      order.status !== "Cancelado" &&
-      (order.status === "Finalizado" || isOrderDueToday(data, order)),
-  );
+  const ready = data.orders.filter((order) => order.status === "Finalizado");
   const orderServices = data.orders
     .filter(
       (order) =>
         order.status !== "Entregue" &&
         order.status !== "Cancelado" &&
-        (isOrderDueToday(data, order) ||
-          order.status === "Em serviço" ||
-          order.status === "Finalizado"),
+        order.status === "Em serviço" || order.status === "Finalizado",
     )
     .map((order) => {
       const entry = data.entries.find((item) => item.id === order.entryId);
@@ -822,12 +809,7 @@ function Dashboard({
         vehicle: data.vehicles.find((item) => item.id === entry?.vehicleId),
         customer: data.customers.find((item) => item.id === entry?.customerId),
         service: budget?.labor[0]?.name ?? "Serviço autorizado",
-        status:
-          order.status === "Aguardando início"
-            ? "Para fazer"
-            : order.status === "Em serviço"
-              ? "Em execução"
-              : "Entregar hoje",
+        status: order.status === "Finalizado" ? "Pronto para retirada" : "Em serviço",
         dueDate: budget?.dueDate ?? order.updatedAt,
       };
     });
@@ -880,7 +862,7 @@ function Dashboard({
           <strong>{currency(revenue)}</strong>
           <small className={revenueVariation >= 0 ? "trend-up" : "trend-down"}>
             {revenueVariation >= 0 ? "↑" : "↓"}{" "}
-            {Math.abs(revenueVariation).toFixed(0)}% <em>vs. ontem</em>
+            {Math.abs(revenueVariation).toFixed(0)}% <em>{comparison.label}</em>
           </small>
         </div>
         <Sparkline points={revenueTrend} />
@@ -903,28 +885,28 @@ function Dashboard({
         </div>
         <div className="operation-grid">
           <OperationCard
-            label="Veículos em atendimento"
+            label="Em avaliação"
             value={activeVehicles.size}
             tone="neutral"
             onClick={() => onNavigate("entries", "active")}
           />
           <OperationCard
-            label="Para fazer"
-            value={toDo.length}
+            label="Aguardando aprovação"
+            value={waiting.length}
             tone="todo"
-            onClick={() => onNavigate("orders", "todo")}
+            onClick={() => onNavigate("budgets", "waiting-approval")}
           />
           <OperationCard
-            label="Em execução"
+            label="Em serviço"
             value={running.length}
             tone="process"
             onClick={() => onNavigate("orders", "running")}
           />
           <OperationCard
-            label="Entregar hoje"
-            value={deliverToday.length}
+            label="Prontos para retirada"
+            value={ready.length}
             tone="delivery"
-            onClick={() => onNavigate("orders", "deliver-today")}
+            onClick={() => onNavigate("orders", "ready")}
           />
         </div>
       </section>
@@ -948,7 +930,6 @@ function Dashboard({
                 : onNavigate("agenda")
             }
           >
-            <VehicleThumbnail vehicle={service.vehicle} />
             <span>
               <strong>
                 {service.vehicle?.brand} {service.vehicle?.model}
@@ -988,19 +969,16 @@ function Dashboard({
             const entry = data.entries.find(
               (item) => item.id === budget.entryId,
             );
-            const vehicle = data.vehicles.find(
-              (item) => item.id === entry?.vehicleId,
-            );
             return (
               <button
                 className="pending-budget-row"
                 key={budget.id}
                 onClick={() => onOpen("budget", budget.id)}
               >
-                <VehicleThumbnail vehicle={vehicle} />
                 <span>
                   <strong>
-                    {vehicle?.brand} {vehicle?.model}
+                    {data.vehicles.find((item) => item.id === entry?.vehicleId)?.brand}{" "}
+                    {data.vehicles.find((item) => item.id === entry?.vehicleId)?.model}
                   </strong>
                   <small>Orçamento #{budget.number}</small>
                 </span>
@@ -1095,7 +1073,6 @@ function EntriesPage({
   data,
   onOpen,
   onNew,
-  initialFilter,
 }: {
   data: KaizoData;
   onOpen: (id: string) => void;
@@ -1109,7 +1086,7 @@ function EntriesPage({
     );
     const vehicle = data.vehicles.find((item) => item.id === entry.vehicleId);
     return (
-      (initialFilter !== "active" || isEntryInOperation(data, entry)) &&
+      isEntryInOperation(data, entry) &&
       `${entry.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
         .toLowerCase()
         .includes(search.toLowerCase())
@@ -1120,7 +1097,7 @@ function EntriesPage({
       <div className="page-heading">
         <div>
           <h1>Atendimentos</h1>
-          <p>Entradas, diagnóstico e preparação do orçamento.</p>
+          <p>Veículos em avaliação antes do orçamento.</p>
         </div>
         <button className="primary-button" onClick={onNew}>
           <Icon name="plus" /> Novo atendimento
@@ -1140,7 +1117,14 @@ function EntriesPage({
             data={data}
             entry={entry}
             status={entry.status}
-            value={entry.initialDueDate}
+            displayStatus={
+              entry.technicalNotes || entry.recommendations
+                ? "Diagnóstico registrado"
+                : "Em avaliação"
+            }
+            description={entry.reportedProblem}
+            meta={entry.priority !== "Normal" ? entry.priority : undefined}
+            value={dateTime(entry.createdAt)}
             onClick={() => onOpen(entry.id)}
           />
         ))}
@@ -1152,23 +1136,12 @@ function EntriesPage({
 function BudgetsPage({
   data,
   onOpen,
-  initialFilter,
 }: {
   data: KaizoData;
   onOpen: (id: string) => void;
   initialFilter?: DashboardListFilter | null;
 }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"Todos" | BudgetStatus>(
-    initialFilter === "waiting-approval" ? "Aguardando aprovação" : "Todos",
-  );
-  const statuses: Array<"Todos" | BudgetStatus> = [
-    "Todos",
-    "Rascunho",
-    "Aguardando aprovação",
-    "Aprovado",
-    "Recusado",
-  ];
   const shown = data.budgets.filter((budget) => {
     const entry = data.entries.find((item) => item.id === budget.entryId);
     const customer = data.customers.find(
@@ -1176,7 +1149,7 @@ function BudgetsPage({
     );
     const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
     return (
-      (filter === "Todos" || budget.status === filter) &&
+      budget.status === "Aguardando aprovação" &&
       `${budget.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
         .toLowerCase()
         .includes(search.toLowerCase())
@@ -1187,7 +1160,7 @@ function BudgetsPage({
       <div className="page-heading">
         <div>
           <h1>Orçamentos</h1>
-          <p>Propostas separadas da execução dos serviços.</p>
+          <p>Clientes de quem ainda esperamos uma decisão.</p>
         </div>
       </div>
       <div className="toolbar">
@@ -1196,17 +1169,6 @@ function BudgetsPage({
           onChange={setSearch}
           placeholder="Buscar número, cliente, placa ou veículo"
         />
-        <div className="filter-pills">
-          {statuses.map((status) => (
-            <button
-              key={status}
-              className={filter === status ? "active" : ""}
-              onClick={() => setFilter(status)}
-            >
-              {status}
-            </button>
-          ))}
-        </div>
       </div>
       <div className="record-list">
         {shown.map((budget) => {
@@ -1245,24 +1207,18 @@ function OrdersPage({
   initialFilter?: DashboardListFilter | null;
 }) {
   const [search, setSearch] = useState("");
-  type OrderFilter = "Todos" | ServiceOrderStatus | "Entregar hoje";
+  type OrderFilter = "Todos" | "Em serviço" | "Prontos para retirada";
   const [filter, setFilter] = useState<OrderFilter>(
-    initialFilter === "todo"
-      ? "Aguardando início"
-      : initialFilter === "running"
-        ? "Em serviço"
-        : initialFilter === "deliver-today"
-          ? "Entregar hoje"
-          : "Todos",
+    initialFilter === "running"
+      ? "Em serviço"
+      : initialFilter === "ready"
+        ? "Prontos para retirada"
+        : "Todos",
   );
   const filters: OrderFilter[] = [
     "Todos",
-    "Aguardando início",
     "Em serviço",
-    "Finalizado",
-    "Entregar hoje",
-    "Entregue",
-    "Cancelado",
+    "Prontos para retirada",
   ];
   const shown = data.orders.filter((order) => {
     const entry = data.entries.find((item) => item.id === order.entryId);
@@ -1271,12 +1227,11 @@ function OrdersPage({
     );
     const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
     const matchesFilter =
-      filter === "Todos" ||
-      (filter === "Entregar hoje"
-        ? order.status !== "Entregue" &&
-          order.status !== "Cancelado" &&
-          (order.status === "Finalizado" || isOrderDueToday(data, order))
-        : order.status === filter);
+      (order.status === "Em serviço" || order.status === "Finalizado") &&
+      (filter === "Todos" ||
+        (filter === "Prontos para retirada"
+          ? order.status === "Finalizado"
+          : order.status === filter));
     return (
       matchesFilter &&
       `${order.number} ${customer?.name} ${vehicle?.brand} ${vehicle?.model} ${vehicle?.plate}`
@@ -1289,7 +1244,7 @@ function OrdersPage({
       <div className="page-heading">
         <div>
           <h1>Ordens de Serviço</h1>
-          <p>Somente serviços autorizados aparecem aqui.</p>
+          <p>Serviços autorizados que precisam ser executados ou entregues.</p>
         </div>
       </div>
       <div className="toolbar">
@@ -1347,7 +1302,10 @@ function RecordRow({
   data,
   entry,
   status,
+  displayStatus,
   secondStatus,
+  description,
+  meta,
   value,
   onClick,
 }: {
@@ -1356,7 +1314,10 @@ function RecordRow({
   data: KaizoData;
   entry?: ServiceEntry;
   status: string;
+  displayStatus?: string;
   secondStatus?: string;
+  description?: string;
+  meta?: string;
   value: string;
   onClick: () => void;
 }) {
@@ -1364,13 +1325,9 @@ function RecordRow({
   const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
   return (
     <button className="record-row" onClick={onClick}>
-      {vehicle ? (
-        <VehicleThumbnail vehicle={vehicle} />
-      ) : (
-        <span className="record-icon">
-          <Icon name={icon} />
-        </span>
-      )}
+      <span className="record-icon">
+        <Icon name={icon} />
+      </span>
       <span className="record-main">
         <small>{number}</small>
         <strong>
@@ -1379,10 +1336,12 @@ function RecordRow({
         <em>
           {customer?.name} · {vehicle?.plate}
         </em>
+        {description && <span className="record-description">{description}</span>}
       </span>
       <span className="record-status">
         {secondStatus && <small>Orçamento: {secondStatus}</small>}
-        <StatusBadge status={status} />
+        {meta && <small className="record-priority">{meta}</small>}
+        <StatusBadge status={displayStatus ?? status} />
       </span>
       <span className="record-value">{value}</span>
       <Icon name="arrow" />
@@ -1521,6 +1480,7 @@ function EntryDetail({
             save(
               {
                 ...draft,
+                status: "Diagnóstico registrado" as const,
                 updatedAt: new Date().toISOString(),
                 timeline: [
                   ...draft.timeline,
@@ -1636,11 +1596,13 @@ function BudgetDetail({
       return window.alert("Telefone inválido para WhatsApp.");
     changeStatus("Aguardando aprovação");
   };
-  const generate = () => {
-    const result = serviceOrderService.generate(data, draft);
-    if (!result.order) return;
-    onCommit(result.data, `OS #${result.order.number} gerada.`);
-    onOpenOrder(result.order.id);
+  const sendDecisionWhatsApp = (decision: "Aprovado" | "Recusado") => {
+    if (!customer) return;
+    const opened =
+      decision === "Aprovado"
+        ? openApprovalConfirmationInWhatsApp({ company: data.company, customer })
+        : openRejectionFollowUpInWhatsApp({ company: data.company, customer });
+    if (!opened) window.alert("Telefone inválido para WhatsApp.");
   };
   return (
     <>
@@ -1700,20 +1662,30 @@ function BudgetDetail({
         onFinalize={() => changeStatus("Aguardando aprovação")}
         onWhatsApp={sendWhatsApp}
       />
-      {draft.status === "Aprovado" && !order && (
-        <div className="conversion-cta card">
+      {(draft.status === "Aprovado" || draft.status === "Recusado") && (
+        <div className={`conversion-cta card decision-${draft.status.toLowerCase()}`}>
           <div>
-            <Icon name="check" />
+            <Icon name={draft.status === "Aprovado" ? "check" : "close"} />
             <span>
-              <strong>Orçamento aprovado</strong>
+              <strong>
+                {draft.status === "Aprovado"
+                  ? "Orçamento aprovado e OS criada"
+                  : "Orçamento recusado e preservado no histórico"}
+              </strong>
               <small>
-                Os dados serão referenciados pela OS sem duplicação
-                desnecessária.
+                {draft.status === "Aprovado"
+                  ? "A ordem iniciou em serviço automaticamente."
+                  : "A proposta saiu da fila ativa sem perder seus itens e valores."}
               </small>
             </span>
           </div>
-          <button className="primary-button" onClick={generate}>
-            Gerar Ordem de Serviço
+          <button
+            className="whatsapp-button"
+            onClick={() => sendDecisionWhatsApp(draft.status as "Aprovado" | "Recusado")}
+          >
+            {draft.status === "Aprovado"
+              ? "Enviar confirmação pelo WhatsApp"
+              : "Entender motivo pelo WhatsApp"}
           </button>
         </div>
       )}
@@ -1754,17 +1726,26 @@ function OrderDetail({
 }) {
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [postSaleOpen, setPostSaleOpen] = useState(false);
+  const [finishPromptOpen, setFinishPromptOpen] = useState(false);
   const entry = data.entries.find((item) => item.id === order.entryId)!;
   const budget = data.budgets.find((item) => item.id === order.budgetId)!;
   const customer = data.customers.find((item) => item.id === entry.customerId);
   const vehicle = data.vehicles.find((item) => item.id === entry.vehicleId);
   const paid = financeService.paidForOrder(data, order.id);
   const total = orderCustomerTotal(budget);
-  const changeStatus = (status: ServiceOrderStatus) =>
+  const changeStatus = (status: ServiceOrderStatus) => {
     onCommit(
       serviceOrderService.changeStatus(data, order, status),
       `OS atualizada para ${status}.`,
     );
+    if (status === "Finalizado") setFinishPromptOpen(true);
+  };
+  const notifyFinished = () => {
+    if (!customer || !vehicle) return;
+    if (!openFinishedServiceInWhatsApp({ company: data.company, customer, vehicle }))
+      window.alert("Telefone inválido para WhatsApp.");
+    setFinishPromptOpen(false);
+  };
   return (
     <>
       <button className="back-button" onClick={onBack}>
@@ -1805,7 +1786,6 @@ function OrderDetail({
               }
             >
               {[
-                "Aguardando início",
                 "Em serviço",
                 "Finalizado",
                 "Entregue",
@@ -1923,6 +1903,25 @@ function OrderDetail({
             setPostSaleOpen(false);
           }}
         />
+      )}
+      {finishPromptOpen && (
+        <Modal
+          title="Serviço finalizado"
+          subtitle="Gostaria de avisar o cliente que o veículo está pronto para retirada?"
+          onClose={() => setFinishPromptOpen(false)}
+        >
+          <div className="finish-prompt-actions">
+            <button className="whatsapp-button" onClick={notifyFinished}>
+              Avisar pelo WhatsApp
+            </button>
+            <button
+              className="secondary-button"
+              onClick={() => setFinishPromptOpen(false)}
+            >
+              Agora não
+            </button>
+          </div>
+        </Modal>
       )}
     </>
   );
@@ -2184,8 +2183,8 @@ function CustomersPage({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [profileTab, setProfileTab] = useState<
-    "data" | "vehicles" | "history" | "finance"
-  >("data");
+    "summary" | "vehicles" | "history"
+  >("summary");
   const selected = data.customers.find((item) => item.id === selectedId);
   const shown = data.customers.filter((item) =>
     `${item.name} ${item.phone} ${item.cpf ?? ""}`
@@ -2196,14 +2195,54 @@ function CustomersPage({
   const entryIds = new Set(entries.map((item) => item.id));
   const budgets = data.budgets.filter((item) => entryIds.has(item.entryId));
   const orders = data.orders.filter((item) => entryIds.has(item.entryId));
-  const orderIds = new Set(orders.map((item) => item.id));
-  const payments = data.payments.filter((item) => orderIds.has(item.orderId));
-  const received = payments
-    .filter((item) => item.status !== "Pendente")
-    .reduce((sum, item) => sum + item.amount, 0);
-  const approvedTotal = budgets
-    .filter((item) => item.status === "Aprovado")
-    .reduce((sum, item) => sum + orderCustomerTotal(item), 0);
+  const customerHistory = [
+    ...entries.map((entry) => {
+      const vehicle = data.vehicles.find((item) => item.id === entry.vehicleId);
+      return {
+        id: `entry-${entry.id}`,
+        date: entry.createdAt,
+        title: entry.reportedProblem,
+        vehicle: `${vehicle?.brand ?? ""} ${vehicle?.model ?? ""}`.trim(),
+        value: 0,
+        status: entry.status,
+        kind: "entry" as const,
+        entityId: entry.id,
+      };
+    }),
+    ...budgets.map((budget) => {
+      const entry = entries.find((item) => item.id === budget.entryId);
+      const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
+      return {
+        id: `budget-${budget.id}`,
+        date: budget.updatedAt,
+        title:
+          budget.labor.map((item) => item.name).join(", ") ||
+          `Orçamento #${budget.number}`,
+        vehicle: `${vehicle?.brand ?? ""} ${vehicle?.model ?? ""}`.trim(),
+        value: orderCustomerTotal(budget),
+        status: budget.status,
+        kind: "budget" as const,
+        entityId: budget.id,
+      };
+    }),
+    ...orders.map((order) => {
+      const entry = entries.find((item) => item.id === order.entryId);
+      const budget = budgets.find((item) => item.id === order.budgetId);
+      const vehicle = data.vehicles.find((item) => item.id === entry?.vehicleId);
+      return {
+        id: `order-${order.id}`,
+        date: order.updatedAt,
+        title:
+          budget?.labor.map((item) => item.name).join(", ") ||
+          `OS #${order.number}`,
+        vehicle: `${vehicle?.brand ?? ""} ${vehicle?.model ?? ""}`.trim(),
+        value: budget ? orderCustomerTotal(budget) : 0,
+        status: order.status,
+        kind: "order" as const,
+        entityId: order.id,
+      };
+    }),
+  ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   return (
     <>
       <div className="page-heading">
@@ -2230,16 +2269,6 @@ function CustomersPage({
               const customerEntries = data.entries.filter(
                 (entry) => entry.customerId === customer.id,
               );
-              const customerEntryIds = new Set(
-                customerEntries.map((entry) => entry.id),
-              );
-              const serviceValue = data.budgets
-                .filter(
-                  (budget) =>
-                    customerEntryIds.has(budget.entryId) &&
-                    budget.status === "Aprovado",
-                )
-                .reduce((sum, budget) => sum + orderCustomerTotal(budget), 0);
               const lastEntry = [...customerEntries].sort(
                 (a, b) =>
                   new Date(b.createdAt).getTime() -
@@ -2251,7 +2280,7 @@ function CustomersPage({
                   key={customer.id}
                   onClick={() => {
                     setSelectedId(customer.id);
-                    setProfileTab("data");
+                    setProfileTab("summary");
                   }}
                 >
                   <span className="contact-avatar">
@@ -2271,7 +2300,6 @@ function CustomersPage({
                   </span>
                   <span className="customer-metrics">
                     <small>{customerEntries.length} atendimentos</small>
-                    <strong>{currency(serviceValue)} em serviços</strong>
                     <small>
                       Último atendimento:{" "}
                       {lastEntry ? shortDate(lastEntry.createdAt) : "—"}
@@ -2300,10 +2328,9 @@ function CustomersPage({
             </div>
             <div className="profile-tabs" role="tablist">
               {[
-                ["data", "Dados"],
+                ["summary", "Resumo"],
                 ["vehicles", "Veículos"],
                 ["history", "Histórico"],
-                ["finance", "Financeiro"],
               ].map(([id, label]) => (
                 <button
                   type="button"
@@ -2317,7 +2344,7 @@ function CustomersPage({
                 </button>
               ))}
             </div>
-            {profileTab === "data" && (
+            {profileTab === "summary" && (
               <div className="profile-section">
                 <h3>Dados do cliente</h3>
                 <div className="mini-card">
@@ -2338,7 +2365,6 @@ function CustomersPage({
                   .filter((vehicle) => vehicle.customerId === selected.id)
                   .map((vehicle) => (
                     <div className="mini-card" key={vehicle.id}>
-                      <VehicleThumbnail vehicle={vehicle} />
                       <span><strong>{vehicle.brand} {vehicle.model}</strong><small>{vehicle.plate}</small></span>
                     </div>
                   ))}
@@ -2346,30 +2372,36 @@ function CustomersPage({
             )}
             {profileTab === "history" && (
               <div className="profile-section">
-                <h3>Atendimentos, orçamentos e OS</h3>
-                {entries.slice(0, 3).map((entry) => (
-                  <button className="mini-card clickable" key={entry.id} onClick={() => onOpen("entry", entry.id)}>
-                    <strong>Atendimento #{entry.number}</strong><StatusBadge status={entry.status} />
+                <h3>Histórico completo</h3>
+                {customerHistory.map((item) => (
+                  <button className="mini-card clickable history-service-row" key={item.id} onClick={() => onOpen(item.kind, item.entityId)}>
+                    <span>
+                      <small>{shortDate(item.date)}</small>
+                      <strong>{item.title}</strong>
+                      <small>{item.vehicle}</small>
+                    </span>
+                    <span>
+                      {item.value > 0 && <strong>{currency(item.value)}</strong>}
+                      <StatusBadge status={item.status} />
+                    </span>
                   </button>
                 ))}
-                {budgets.slice(0, 3).map((budget) => (
-                  <button className="mini-card clickable" key={budget.id} onClick={() => onOpen("budget", budget.id)}>
-                    <strong>Orçamento #{budget.number}</strong><StatusBadge status={budget.status} />
-                  </button>
-                ))}
-                {orders.slice(0, 3).map((order) => (
-                  <button className="mini-card clickable" key={order.id} onClick={() => onOpen("order", order.id)}>
-                    <strong>OS #{order.number}</strong><StatusBadge status={order.status} />
-                  </button>
-                ))}
-              </div>
-            )}
-            {profileTab === "finance" && (
-              <div className="profile-section customer-finance-summary">
-                <h3>Resumo financeiro</h3>
-                <div className="mini-card"><span><small>Serviços aprovados</small><strong>{currency(approvedTotal)}</strong></span></div>
-                <div className="mini-card"><span><small>Recebido</small><strong>{currency(received)}</strong></span></div>
-                <div className="mini-card"><span><small>Saldo relacionado</small><strong>{currency(Math.max(0, approvedTotal - received))}</strong></span></div>
+                {data.postSales
+                  .filter((followUp) => followUp.customerId === selected.id)
+                  .map((followUp) => (
+                    <div className="mini-card history-service-row" key={`post-${followUp.id}`}>
+                      <span>
+                        <small>{shortDate(followUp.scheduledAt)}</small>
+                        <strong>Pós-venda · {followUp.service}</strong>
+                        <small>{followUp.notes}</small>
+                      </span>
+                      <StatusBadge status={followUp.status} />
+                    </div>
+                  ))}
+                {customerHistory.length === 0 &&
+                  !data.postSales.some((followUp) => followUp.customerId === selected.id) && (
+                    <p className="muted">Nenhum histórico registrado.</p>
+                  )}
               </div>
             )}
           </aside>
@@ -2485,7 +2517,6 @@ function VehiclesPage({
                   key={vehicle.id}
                   onClick={() => setSelectedId(vehicle.id)}
                 >
-                  <VehicleThumbnail vehicle={vehicle} />
                   <span className="garage-card-main">
                     <strong>
                       {vehicle.brand} {vehicle.model}
@@ -2525,7 +2556,6 @@ function VehiclesPage({
             <p>
               {selected.version} · {selected.year}
             </p>
-            <VehiclePreview vehicle={selected} />
             <div className="vehicle-summary">
               <div>
                 <small>Cliente</small>
@@ -2680,7 +2710,6 @@ function AgendaPage({
           return (
             <article className="card agenda-card" key={appointment.id}>
               <time>{dateTime(appointment.scheduledAt)}</time>
-              <VehicleThumbnail vehicle={vehicle} />
               <div>
                 <strong>{appointment.service}</strong>
                 <span>
@@ -2729,6 +2758,9 @@ function PostSalePage({
   onCommit: (data: KaizoData, message?: string) => void;
   onOpenOrder: (id: string) => void;
 }) {
+  const activeFollowUps = data.postSales.filter(
+    (followUp) => followUp.status !== "Concluído",
+  );
   const openWhatsApp = (followUp: PostSaleFollowUp) => {
     const customer = data.customers.find(
       (item) => item.id === followUp.customerId,
@@ -2751,7 +2783,7 @@ function PostSalePage({
         </div>
       </div>
       <div className="post-sale-list">
-        {[...data.postSales]
+        {[...activeFollowUps]
           .sort(
             (a, b) =>
               new Date(a.scheduledAt).getTime() -
@@ -2777,27 +2809,10 @@ function PostSalePage({
                 <StatusBadge status={followUp.status} />
                 <div className="post-actions">
                   <button
-                    className="secondary-button"
+                    className="whatsapp-button"
                     onClick={() => openWhatsApp(followUp)}
                   >
-                    Abrir WhatsApp
-                  </button>
-                  <button
-                    className="secondary-button"
-                    onClick={() => onOpenOrder(followUp.orderId)}
-                  >
-                    Abrir OS
-                  </button>
-                  <button
-                    className="secondary-button"
-                    onClick={() =>
-                      onCommit(
-                        postSaleService.postpone(data, followUp),
-                        "Pós-venda adiado por 7 dias.",
-                      )
-                    }
-                  >
-                    Adiar
+                    WhatsApp
                   </button>
                   <button
                     className="primary-button"
@@ -2810,11 +2825,41 @@ function PostSalePage({
                   >
                     Concluir
                   </button>
+                  <details className="post-more-actions">
+                    <summary aria-label="Mais ações">Mais ações</summary>
+                    <div>
+                      <button
+                        className="secondary-button"
+                        onClick={() =>
+                          onCommit(
+                            postSaleService.postpone(data, followUp),
+                            "Pós-venda adiado por 7 dias.",
+                          )
+                        }
+                      >
+                        Adiar 7 dias
+                      </button>
+                      {data.orders.some((order) => order.id === followUp.orderId) && (
+                        <button
+                          className="secondary-button"
+                          onClick={() => onOpenOrder(followUp.orderId)}
+                        >
+                          Abrir OS
+                        </button>
+                      )}
+                    </div>
+                  </details>
                 </div>
               </article>
             );
           })}
       </div>
+      {activeFollowUps.length === 0 && (
+        <EmptyState
+          title="Nenhum contato pendente"
+          text="Os acompanhamentos concluídos permanecem no histórico do cliente."
+        />
+      )}
     </>
   );
 }
@@ -2968,6 +3013,16 @@ function ReportsPage({ data }: { data: KaizoData }) {
     customRange,
   );
   const funnel = reportService.funnel(data, period, customRange);
+  const comparison = financeService.comparison(data, period, customRange);
+  const previousRange: DateRange = {
+    start: dateInputValue(comparison.previousRange.start),
+    end: dateInputValue(comparison.previousRange.end),
+  };
+  const previousRanking = reportService.serviceRanking(
+    data,
+    "custom",
+    previousRange,
+  );
   const chartDays =
     period === "30d"
       ? 30
@@ -2980,12 +3035,9 @@ function ReportsPage({ data }: { data: KaizoData }) {
     period === "custom"
       ? financeService.chartRange(data, customRange)
       : financeService.chart(data, chartDays);
-  const previousRevenue = financeService.revenue(
-    data,
-    period === "today" ? "yesterday" : "30d",
-  );
-  const trendVariation = previousRevenue
-    ? ((summary.revenue - previousRevenue) / previousRevenue) * 100
+  const previousTrend = financeService.chartRange(data, previousRange);
+  const trendVariation = comparison.previous
+    ? ((summary.revenue - comparison.previous) / comparison.previous) * 100
     : summary.revenue
       ? 100
       : 0;
@@ -3007,10 +3059,13 @@ function ReportsPage({ data }: { data: KaizoData }) {
           <strong>{currency(summary.revenue)}</strong>
           <small className={trendVariation >= 0 ? "trend-up" : "trend-down"}>
             {trendVariation >= 0 ? "↑" : "↓"}{" "}
-            {Math.abs(trendVariation).toFixed(1)}% <em>vs. período anterior</em>
+            {Math.abs(trendVariation).toFixed(1)}% <em>{comparison.label}</em>
           </small>
         </div>
-        <LineChart points={trend} />
+        <LineChart
+          points={trend}
+          comparisonPoints={previousTrend.length === trend.length ? previousTrend : undefined}
+        />
       </section>
       <section className="report-visual-grid">
         <div className="card report-card">
@@ -3071,7 +3126,12 @@ function ReportsPage({ data }: { data: KaizoData }) {
             items={profitable.slice(0, 6).map((item) => ({
               label: item.name,
               value: item.profit,
-              detail: `${currency(item.profit)} · ${item.revenue ? ((item.profit / item.revenue) * 100).toFixed(0) : 0}%`,
+              detail: `${currency(item.profit)} · ${item.revenue ? ((item.profit / item.revenue) * 100).toFixed(0) : 0}%${(() => {
+                const previous = previousRanking.find((ranked) => ranked.name === item.name)?.profit ?? 0;
+                if (!previous) return "";
+                const variation = ((item.profit - previous) / previous) * 100;
+                return ` · ${variation >= 0 ? "+" : ""}${variation.toFixed(0)}%`;
+              })()}`,
             }))}
           />
         </div>
@@ -3083,17 +3143,33 @@ function ReportsPage({ data }: { data: KaizoData }) {
             <p>Conversão financeira entre as etapas.</p>
           </div>
         </div>
-        <div className="funnel-flow">
+        <div className="funnel-flow funnel-bars">
           {[
             ["Orçado", funnel.budgeted],
             ["Aprovado", funnel.approved],
             ["Executado", funnel.executed],
             ["Recebido", funnel.received],
           ].map(([label, value], index) => (
-            <div key={String(label)}>
-              <span>{label}</span>
-              <strong>{currency(Number(value))}</strong>
-              {index < 3 && <Icon name="arrow" />}
+            <div
+              key={String(label)}
+              style={{ "--funnel-width": `${funnel.budgeted ? Math.max(8, (Number(value) / funnel.budgeted) * 100) : 8}%` } as CSSProperties}
+            >
+              <span><b>{label}</b><strong>{currency(Number(value))}</strong></span>
+              <i><em /></i>
+              <small>
+                {funnel.budgeted
+                  ? `${((Number(value) / funnel.budgeted) * 100).toFixed(0)}% do orçado`
+                  : "0% do orçado"}
+              </small>
+              {index < 3 && (
+                <small className="funnel-conversion">
+                  ↓ {Number(value) ? `${((Number([
+                    funnel.approved,
+                    funnel.executed,
+                    funnel.received,
+                  ][index]) / Number(value)) * 100).toFixed(0)}%` : "0%"}
+                </small>
+              )}
             </div>
           ))}
         </div>
@@ -3376,6 +3452,8 @@ function VehicleModal({
   const [vehicleCategory, setVehicleCategory] = useState<VehicleCategory>(
     vehicle?.vehicleCategory ?? inferVehicleCategory(vehicle?.model ?? ""),
   );
+  const brandSuggestions = localVehicleCatalog.searchBrands(brand);
+  const modelSuggestions = localVehicleCatalog.searchModels(brand, model);
 
   return (
     <Modal
@@ -3402,15 +3480,6 @@ function VehicleModal({
           });
         }}
       >
-        <VehiclePreview
-          vehicle={{
-            brand,
-            model,
-            color,
-            vehicleCategory,
-            vehiclePhoto: vehicle?.vehiclePhoto,
-          }}
-        />
         <div className="form-grid">
           <Field label="Cliente" span>
             <select
@@ -3429,14 +3498,19 @@ function VehicleModal({
           <Field label="Marca">
             <input
               name="brand"
+              list="vehicle-brand-options"
               value={brand}
               onChange={(event) => setBrand(event.target.value)}
               required
             />
+            <datalist id="vehicle-brand-options">
+              {brandSuggestions.map((option) => <option key={option} value={option} />)}
+            </datalist>
           </Field>
           <Field label="Modelo">
             <input
               name="model"
+              list="vehicle-model-options"
               value={model}
               onChange={(event) => {
                 const nextModel = event.target.value;
@@ -3446,8 +3520,11 @@ function VehicleModal({
               }}
               required
             />
+            <datalist id="vehicle-model-options">
+              {modelSuggestions.map((option) => <option key={option} value={option} />)}
+            </datalist>
           </Field>
-          <Field label="Versão">
+          <Field label="Versão (opcional)">
             <input name="version" defaultValue={vehicle?.version} />
           </Field>
           <Field label="Ano">
@@ -3469,14 +3546,14 @@ function VehicleModal({
               required
             />
           </Field>
-          <Field label="Cor">
+          <Field label="Cor (opcional)">
             <input
               name="color"
               value={color}
               onChange={(event) => setColor(event.target.value)}
             />
           </Field>
-          <Field label="Categoria do veículo">
+          <Field label="Categoria (opcional)">
             <select
               value={vehicleCategory}
               onChange={(event) =>
@@ -3490,10 +3567,6 @@ function VehicleModal({
               ))}
             </select>
           </Field>
-          <div className="field field-span">
-            <span>Cores rápidas</span>
-            <VehicleColorPicker value={color} onChange={setColor} />
-          </div>
           <Field label="Quilometragem">
             <input
               name="mileage"
@@ -3505,7 +3578,8 @@ function VehicleModal({
             />
           </Field>
           <Field label="Combustível">
-            <select name="fuel" defaultValue={vehicle?.fuel}>
+            <select name="fuel" defaultValue={vehicle?.fuel ?? ""} required>
+              <option value="">Selecione</option>
               <option>Flex</option>
               <option>Gasolina</option>
               <option>Etanol</option>

@@ -41,11 +41,25 @@ const normalizeData = (data: KaizoData): KaizoData => ({
   })),
   entries: (data.entries ?? []).map((entry) => ({
     ...entry,
+    status:
+      entry.status === ("Em diagnóstico" as EntryStatus) ||
+      entry.status === ("Aguardando orçamento" as EntryStatus)
+        ? entry.technicalNotes || entry.recommendations
+          ? "Diagnóstico registrado"
+          : "Em avaliação"
+        : entry.status,
     evidences: entry.evidences ?? [],
     timeline: entry.timeline ?? [],
   })),
   budgets: (data.budgets ?? []).map(normalizeBudget),
-  orders: data.orders ?? [],
+  orders: (data.orders ?? []).map((order) => ({
+    ...order,
+    status:
+      order.status === ("Aguardando início" as ServiceOrderStatus) ||
+      order.status === ("Aprovado" as ServiceOrderStatus)
+        ? "Em serviço"
+        : order.status,
+  })),
   payments: data.payments ?? [],
   appointments: data.appointments ?? [],
   postSales: data.postSales ?? [],
@@ -87,7 +101,7 @@ const migrateLegacyData = (raw: Record<string, unknown>): KaizoData => {
     const budgetId = `budget-${legacy.id}`;
     const hasBudget = legacy.status !== "Em diagnóstico";
     const entryStatus: EntryStatus = !hasBudget
-      ? "Em diagnóstico"
+      ? "Em avaliação"
       : [
             "Recusado",
             "Cancelado",
@@ -148,6 +162,8 @@ const migrateLegacyData = (raw: Record<string, unknown>): KaizoData => {
     );
 
     const statusMap: Record<string, ServiceOrderStatus> = {
+      "Aguardando início": "Em serviço",
+      Aprovado: "Em serviço",
       "Em serviço": "Em serviço",
       Finalizado: "Finalizado",
       Entregue: "Entregue",

@@ -1,10 +1,5 @@
 import { useState } from "react";
 import { Icon } from "@/components/Icon";
-import {
-  VehicleColorPicker,
-  VehiclePreview,
-  VehicleThumbnail,
-} from "@/components/VehicleThumbnail";
 import { localVehicleCatalog } from "@/data/vehicleCatalog";
 import { customerService, vehicleService } from "@/lib/repository";
 import type {
@@ -254,7 +249,6 @@ export function NewEntryModal({
     cpf: "",
     notes: "",
   });
-  const [manualVehicle, setManualVehicle] = useState(false);
   const [vehicleDraft, setVehicleDraft] = useState({
     plate: "",
     brand: "",
@@ -329,11 +323,13 @@ export function NewEntryModal({
       !vehicleDraft.plate.trim() ||
       !vehicleDraft.brand.trim() ||
       !vehicleDraft.model.trim() ||
+      !vehicleDraft.mileage.trim() ||
+      !vehicleDraft.fuel ||
       !Number.isInteger(year) ||
       year < 1950
     )
       return setError(
-        "Preencha placa, marca, modelo e um ano válido para cadastrar o veículo.",
+        "Preencha placa, marca, modelo, ano, quilometragem e combustível.",
       );
     const vehicle: Vehicle = {
       id: createId("vehicle"),
@@ -384,7 +380,7 @@ export function NewEntryModal({
         priority,
         initialDueDate: `${deliveryDate}T${deliveryTime || "17:00"}`,
         notes: notes.trim(),
-        status: "Em diagnóstico",
+        status: "Em avaliação",
         evidences: [],
         createdAt: now,
         updatedAt: now,
@@ -555,7 +551,6 @@ export function NewEntryModal({
                       key={vehicle.id}
                       onClick={() => selectVehicle(vehicle)}
                     >
-                      <VehicleThumbnail vehicle={vehicle} />
                       <span>
                         <strong>
                           {vehicle.brand} {vehicle.model}
@@ -591,8 +586,7 @@ export function NewEntryModal({
                     <div>
                       <strong>Novo veículo</strong>
                       <small>
-                        Catálogo inteligente com preenchimento manual
-                        disponível.
+                        Informe apenas os dados necessários para a operação.
                       </small>
                     </div>
                     <button
@@ -603,23 +597,9 @@ export function NewEntryModal({
                       <Icon name="close" />
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    className="manual-toggle"
-                    onClick={() => setManualVehicle((current) => !current)}
-                  >
-                    {manualVehicle
-                      ? "Usar catálogo de veículos"
-                      : "Não encontrou o modelo? Preencher manualmente."}
-                  </button>
-                  <VehiclePreview
-                    vehicle={{
-                      brand: vehicleDraft.brand,
-                      model: vehicleDraft.model,
-                      color: vehicleDraft.color,
-                      vehicleCategory: vehicleDraft.vehicleCategory,
-                    }}
-                  />
+                  <p className="manual-hint">
+                    Não encontrou o modelo? Digite manualmente.
+                  </p>
                   <div className="form-grid">
                     <Field label="Placa">
                       <input
@@ -634,92 +614,50 @@ export function NewEntryModal({
                         }
                       />
                     </Field>
-                    {manualVehicle ? (
-                      <>
-                        <Field label="Marca">
-                          <input
-                            value={vehicleDraft.brand}
-                            onChange={(event) =>
-                              setVehicleDraft({
-                                ...vehicleDraft,
-                                brand: event.target.value,
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Modelo">
-                          <input
-                            value={vehicleDraft.model}
-                            onChange={(event) =>
-                              setVehicleDraft({
-                                ...vehicleDraft,
-                                model: event.target.value,
-                                vehicleCategory: inferVehicleCategory(
-                                  event.target.value,
-                                  vehicleDraft.vehicleCategory,
-                                ),
-                              })
-                            }
-                          />
-                        </Field>
-                        <Field label="Versão">
-                          <input
-                            value={vehicleDraft.version}
-                            onChange={(event) =>
-                              setVehicleDraft({
-                                ...vehicleDraft,
-                                version: event.target.value,
-                              })
-                            }
-                          />
-                        </Field>
-                      </>
-                    ) : (
-                      <>
-                        <AutocompleteField
-                          label="Marca"
-                          value={vehicleDraft.brand}
-                          options={brandOptions}
-                          placeholder="Comece pela marca"
-                          onChange={(value) =>
-                            setVehicleDraft({
-                              ...vehicleDraft,
-                              brand: value,
-                              model: "",
-                              version: "",
-                            })
-                          }
-                        />
-                        <AutocompleteField
-                          label="Modelo"
-                          value={vehicleDraft.model}
-                          options={modelOptions}
-                          disabled={!vehicleDraft.brand}
-                          placeholder="Depois, escolha o modelo"
-                          onChange={(value) =>
-                            setVehicleDraft({
-                              ...vehicleDraft,
-                              model: value,
-                              version: "",
-                              vehicleCategory: inferVehicleCategory(
-                                value,
-                                vehicleDraft.vehicleCategory,
-                              ),
-                            })
-                          }
-                        />
-                        <AutocompleteField
-                          label="Versão"
-                          value={vehicleDraft.version}
-                          options={versionOptions}
-                          disabled={!vehicleDraft.model}
-                          placeholder="Por fim, a versão"
-                          onChange={(value) =>
-                            setVehicleDraft({ ...vehicleDraft, version: value })
-                          }
-                        />
-                      </>
-                    )}
+                    <>
+                      <AutocompleteField
+                        label="Marca"
+                        value={vehicleDraft.brand}
+                        options={brandOptions}
+                        placeholder="Marca"
+                        onChange={(value) =>
+                          setVehicleDraft({
+                            ...vehicleDraft,
+                            brand: value,
+                            model: "",
+                            version: "",
+                          })
+                        }
+                      />
+                      <AutocompleteField
+                        label="Modelo"
+                        value={vehicleDraft.model}
+                        options={modelOptions}
+                        disabled={!vehicleDraft.brand}
+                        placeholder="Modelo"
+                        onChange={(value) =>
+                          setVehicleDraft({
+                            ...vehicleDraft,
+                            model: value,
+                            version: "",
+                            vehicleCategory: inferVehicleCategory(
+                              value,
+                              vehicleDraft.vehicleCategory,
+                            ),
+                          })
+                        }
+                      />
+                      <AutocompleteField
+                        label="Versão (opcional)"
+                        value={vehicleDraft.version}
+                        options={versionOptions}
+                        disabled={!vehicleDraft.model}
+                        placeholder="Versão"
+                        onChange={(value) =>
+                          setVehicleDraft({ ...vehicleDraft, version: value })
+                        }
+                      />
+                    </>
                     <Field label="Ano">
                       <input
                         inputMode="numeric"
@@ -736,7 +674,7 @@ export function NewEntryModal({
                         }
                       />
                     </Field>
-                    <Field label="Cor">
+                    <Field label="Cor (opcional)">
                       <input
                         value={vehicleDraft.color}
                         onChange={(event) =>
@@ -747,7 +685,7 @@ export function NewEntryModal({
                         }
                       />
                     </Field>
-                    <Field label="Categoria do veículo">
+                    <Field label="Categoria (opcional)">
                       <select
                         value={vehicleDraft.vehicleCategory}
                         onChange={(event) =>
@@ -765,15 +703,6 @@ export function NewEntryModal({
                         ))}
                       </select>
                     </Field>
-                    <div className="field field-span">
-                      <span>Cores rápidas</span>
-                      <VehicleColorPicker
-                        value={vehicleDraft.color}
-                        onChange={(color) =>
-                          setVehicleDraft({ ...vehicleDraft, color })
-                        }
-                      />
-                    </div>
                     <Field label="Quilometragem">
                       <MileageInput
                         value={vehicleDraft.mileage}
@@ -782,7 +711,7 @@ export function NewEntryModal({
                         }
                       />
                     </Field>
-                    <Field label="Combustível (opcional)">
+                    <Field label="Combustível">
                       <select
                         value={vehicleDraft.fuel}
                         onChange={(event) =>
@@ -792,7 +721,7 @@ export function NewEntryModal({
                           })
                         }
                       >
-                        <option value="">Não informado</option>
+                        <option value="">Selecione</option>
                         <option>Flex</option>
                         <option>Gasolina</option>
                         <option>Etanol</option>

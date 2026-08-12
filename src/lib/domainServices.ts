@@ -44,6 +44,45 @@ const notification = (
   ...input,
 });
 
+const generateApprovedOrder = (data: KaizoData, budget: Budget) => {
+  const existing = data.orders.find((order) => order.budgetId === budget.id);
+  if (existing) return { data, order: existing };
+  const order: ServiceOrder = {
+    id: createId("order"),
+    number: Math.max(850, ...data.orders.map((item) => item.number)) + 1,
+    entryId: budget.entryId,
+    budgetId: budget.id,
+    status: "Em serviço",
+    createdAt: now(),
+    updatedAt: now(),
+    timeline: [
+      event(
+        "OS gerada",
+        `Ordem criada em serviço após aprovação do orçamento #${budget.number}.`,
+      ),
+    ],
+  };
+  const entry = data.entries.find((item) => item.id === budget.entryId);
+  const updatedEntry: ServiceEntry | undefined = entry
+    ? {
+        ...entry,
+        status: "Encerrado",
+        updatedAt: now(),
+        timeline: [
+          ...entry.timeline,
+          event(
+            "OS gerada",
+            `OS #${order.number} criada automaticamente após a aprovação.`,
+          ),
+        ],
+      }
+    : undefined;
+  const entries = updatedEntry
+    ? upsert(data.entries, updatedEntry)
+    : data.entries;
+  return { data: { ...data, orders: [order, ...data.orders], entries }, order };
+};
+
 export const entryService = {
   upsert: (data: KaizoData, entry: ServiceEntry) => ({
     ...data,
@@ -65,7 +104,7 @@ export const budgetService = {
       id: createId("budget"),
       number: Math.max(3000, ...data.budgets.map((item) => item.number)) + 1,
       entryId: entry.id,
-      status: "Rascunho",
+      status: "Aguardando aprovação",
       parts: [],
       labor: [],
       quoteMessage: data.company.quoteMessage,
@@ -73,7 +112,7 @@ export const budgetService = {
       createdAt: now(),
       updatedAt: now(),
       timeline: [
-        event("Orçamento criado", "Rascunho criado a partir do atendimento."),
+        event("Orçamento criado", "Proposta criada e incluída na fila de aprovação."),
       ],
     };
     const updatedEntry = {
@@ -142,12 +181,15 @@ export const budgetService = {
         ...notifications,
       ];
     }
-    return {
+    const result = {
       ...data,
       budgets: upsert(data.budgets, updated),
       entries,
       notifications,
     };
+    return status === "Aprovado"
+      ? generateApprovedOrder(result, updated).data
+      : result;
   },
 };
 
@@ -158,45 +200,7 @@ export const serviceOrderService = {
   }),
   generate(data: KaizoData, budget: Budget) {
     if (budget.status !== "Aprovado") return { data, order: null };
-    const existing = data.orders.find((order) => order.budgetId === budget.id);
-    if (existing) return { data, order: existing };
-    const order: ServiceOrder = {
-      id: createId("order"),
-      number: Math.max(850, ...data.orders.map((item) => item.number)) + 1,
-      entryId: budget.entryId,
-      budgetId: budget.id,
-      status: "Aguardando início",
-      createdAt: now(),
-      updatedAt: now(),
-      timeline: [
-        event(
-          "OS gerada",
-          `Ordem criada a partir do orçamento #${budget.number}.`,
-        ),
-      ],
-    };
-    const entry = data.entries.find((item) => item.id === budget.entryId);
-    const updatedEntry: ServiceEntry | undefined = entry
-      ? {
-          ...entry,
-          status: "Encerrado",
-          updatedAt: now(),
-          timeline: [
-            ...entry.timeline,
-            event(
-              "OS gerada",
-              `OS #${order.number} criada sem duplicar os dados do atendimento.`,
-            ),
-          ],
-        }
-      : undefined;
-    const entries = updatedEntry
-      ? upsert(data.entries, updatedEntry)
-      : data.entries;
-    return {
-      data: { ...data, orders: [order, ...data.orders], entries },
-      order,
-    };
+    return generateApprovedOrder(data, budget);
   },
   changeStatus(
     data: KaizoData,
@@ -341,6 +345,52 @@ export const periodBounds = (period: PeriodKey, range?: DateRange) => {
   return { start, end };
 };
 
+export const previousPeriodBounds = (period: PeriodKey, range?: DateRange) => {
+  const current = periodBounds(period, range);
+  if (period === "month") {
+    const start = new Date(
+      current.start.getFullYear(),
+      current.start.getMonth() - 1,
+      1,
+    );
+    const end = new Date(
+      start.getFullYear(),
+      start.getMonth(),
+      Math.min(
+        current.end.getDate(),
+        new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate(),
+      ),
+      23,
+      59,
+      59,
+      999,
+    );
+    return { start, end };
+  }
+  const end = new Date(current.start.getTime() - 1);
+  const start = new Date(end);
+  const days =
+    period === "today" || period === "yesterday"
+      ? 1
+      : period === "7d"
+        ? 7
+        : period === "30d"
+          ? 30
+          : range
+            ? Math.max(
+                1,
+                Math.round(
+                  (localDate(range.end).getTime() -
+                    localDate(range.start).getTime()) /
+                    86_400_000,
+                ) + 1,
+              )
+            : 1;
+  start.setDate(start.getDate() - (days - 1));
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+};
+
 const inPeriod = (
   value: string | undefined,
   period: PeriodKey,
@@ -361,6 +411,32 @@ export const financeService = {
           inPeriod(payment.paidAt, period, range),
       )
       .reduce((sum, payment) => sum + payment.amount, 0);
+  },
+  comparison(data: KaizoData, period: PeriodKey, range?: DateRange) {
+    const current = periodBounds(period, range);
+    const previous = previousPeriodBounds(period, range);
+    const sumBetween = (start: Date, end: Date) =>
+      data.payments
+        .filter((payment) => {
+          if (payment.status === "Pendente" || !payment.paidAt) return false;
+          const paidAt = new Date(payment.paidAt);
+          return paidAt >= start && paidAt <= end;
+        })
+        .reduce((sum, payment) => sum + payment.amount, 0);
+    const labels: Record<PeriodKey, string> = {
+      today: "vs. ontem",
+      yesterday: "vs. anteontem",
+      "7d": "vs. 7 dias anteriores",
+      "30d": "vs. 30 dias anteriores",
+      month: "vs. período equivalente anterior",
+      custom: "vs. período anterior",
+    };
+    return {
+      current: sumBetween(current.start, current.end),
+      previous: sumBetween(previous.start, previous.end),
+      label: labels[period],
+      previousRange: previous,
+    };
   },
   orderTotal(data: KaizoData, order: ServiceOrder) {
     const budget = data.budgets.find((item) => item.id === order.budgetId);

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { CSSProperties } from "react";
 
 type ChartPoint = { label: string; value: number };
@@ -8,17 +9,31 @@ const compactMoney = (value: number) =>
     maximumFractionDigits: 1,
   }).format(value);
 
+const currency = (value: number) =>
+  new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    maximumFractionDigits: 0,
+  }).format(value);
+
 export function LineChart({
   points,
+  comparisonPoints,
   className = "",
 }: {
   points: ChartPoint[];
+  comparisonPoints?: ChartPoint[];
   className?: string;
 }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 640;
   const height = 220;
   const padding = 20;
-  const max = Math.max(1, ...points.map((point) => point.value));
+  const max = Math.max(
+    1,
+    ...points.map((point) => point.value),
+    ...(comparisonPoints ?? []).map((point) => point.value),
+  );
   const coordinates = points.map((point, index) => ({
     ...point,
     x:
@@ -29,9 +44,38 @@ export function LineChart({
   }));
   const line = coordinates.map((point) => `${point.x},${point.y}`).join(" ");
   const area = `${padding},${height - padding} ${line} ${width - padding},${height - padding}`;
+  const comparisonCoordinates = (comparisonPoints ?? []).map((point, index) => ({
+    ...point,
+    x:
+      comparisonPoints?.length === 1
+        ? width / 2
+        : padding +
+          (index / Math.max(1, (comparisonPoints?.length ?? 1) - 1)) *
+            (width - padding * 2),
+    y: height - padding - (point.value / max) * (height - padding * 2),
+  }));
+  const updateActivePoint = (clientX: number, element: HTMLDivElement) => {
+    if (!coordinates.length) return;
+    const bounds = element.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - bounds.left) / bounds.width));
+    setActiveIndex(Math.round(ratio * (coordinates.length - 1)));
+  };
+  const active = activeIndex === null ? null : coordinates[activeIndex];
 
   return (
-    <div className={`line-chart ${className}`}>
+    <div
+      className={`line-chart ${className}`}
+      onPointerDown={(event) => {
+        event.currentTarget.setPointerCapture(event.pointerId);
+        updateActivePoint(event.clientX, event.currentTarget);
+      }}
+      onPointerMove={(event) => {
+        if (event.pointerType === "mouse" && event.buttons === 0) return;
+        updateActivePoint(event.clientX, event.currentTarget);
+      }}
+      onMouseMove={(event) => updateActivePoint(event.clientX, event.currentTarget)}
+      onMouseLeave={() => setActiveIndex(null)}
+    >
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
@@ -55,6 +99,12 @@ export function LineChart({
         ))}
         <polygon points={area} fill="url(#line-area)" />
         <polyline points={line} className="chart-line" />
+        {comparisonCoordinates.length > 1 && (
+          <polyline
+            points={comparisonCoordinates.map((point) => `${point.x},${point.y}`).join(" ")}
+            className="chart-line chart-line-previous"
+          />
+        )}
         {coordinates.map((point, index) => (
           <g key={`${point.label}-${index}`}>
             <circle cx={point.x} cy={point.y} r="5" className="chart-point">
@@ -62,7 +112,26 @@ export function LineChart({
             </circle>
           </g>
         ))}
+        {active && (
+          <line
+            x1={active.x}
+            y1={padding}
+            x2={active.x}
+            y2={height - padding}
+            className="chart-touch-guide"
+          />
+        )}
       </svg>
+      {active && (
+        <div
+          className="chart-tooltip"
+          style={{ left: `${(active.x / width) * 100}%` }}
+          role="status"
+        >
+          <small>{active.label}</small>
+          <strong>{currency(active.value)}</strong>
+        </div>
+      )}
       <div className="chart-axis-labels">
         {coordinates.map((point, index) =>
           index === 0 ||

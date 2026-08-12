@@ -58,7 +58,7 @@ const entries: ServiceEntry[] = [
     priority: "Alta",
     initialDueDate: localDateTime(1, 16),
     notes: "Atendimento aguardando diagnóstico.",
-    status: "Em diagnóstico",
+    status: "Em avaliação",
     evidences: [],
     createdAt: at(0, 8, 15),
     updatedAt: at(0, 8, 15),
@@ -642,7 +642,7 @@ export const seedData: KaizoData = {
       number: 854,
       entryId: "entry-6",
       budgetId: "budget-5",
-      status: "Aguardando início",
+      status: "Em serviço",
       createdAt: at(-1, 10),
       updatedAt: at(-1, 10),
       timeline: [

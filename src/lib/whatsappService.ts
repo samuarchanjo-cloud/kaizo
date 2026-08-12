@@ -27,3 +27,52 @@ export const openQuoteInWhatsApp = (details: { company: CompanySettings; custome
   window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   return true;
 };
+
+const openMessageInWhatsApp = (customer: Customer, message: string) => {
+  const phone = normalizeBrazilianPhone(customer.phone);
+  if (!/^55\d{10,11}$/.test(phone)) return false;
+  window.open(
+    `https://wa.me/${phone}?text=${encodeURIComponent(message)}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+  return true;
+};
+
+export const openApprovalConfirmationInWhatsApp = ({
+  company,
+  customer,
+}: {
+  company: CompanySettings;
+  customer: Customer;
+}) =>
+  openMessageInWhatsApp(
+    customer,
+    `Olá, ${customer.name}! Vimos que você autorizou o orçamento para o serviço do seu veículo.\n\nVamos dar andamento ao serviço e, dentro do prazo estimado, entraremos em contato para a entrega.\n\nObrigado pela confiança!\n\n${company.name}`,
+  );
+
+export const openRejectionFollowUpInWhatsApp = ({
+  company,
+  customer,
+}: {
+  company: CompanySettings;
+  customer: Customer;
+}) =>
+  openMessageInWhatsApp(
+    customer,
+    `Olá, ${customer.name}! Vimos que o orçamento enviado não foi aprovado.\n\nPara entendermos melhor e verificarmos se podemos ajudar, poderia nos informar se houve alguma questão relacionada ao valor das peças, mão de obra, prazo ou outro motivo?\n\nFicamos à disposição.\n\n${company.name}`,
+  );
+
+export const openFinishedServiceInWhatsApp = ({
+  company,
+  customer,
+  vehicle,
+}: {
+  company: CompanySettings;
+  customer: Customer;
+  vehicle: Vehicle;
+}) =>
+  openMessageInWhatsApp(
+    customer,
+    `Olá, ${customer.name}! O serviço do seu ${vehicle.brand} ${vehicle.model} foi finalizado e o veículo já está disponível para retirada.\n\nQualquer dúvida, estamos à disposição.\n\n${company.name}`,
+  );

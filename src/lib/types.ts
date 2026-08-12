@@ -1,10 +1,17 @@
 export type Priority = "Normal" | "Alta" | "Urgente";
 export type EntryStatus =
-  "Em diagnóstico" | "Aguardando orçamento" | "Orçamento criado" | "Encerrado";
+  "Em avaliação" | "Diagnóstico registrado" | "Orçamento criado" | "Encerrado";
 export type BudgetStatus =
   "Rascunho" | "Aguardando aprovação" | "Aprovado" | "Recusado";
+export type BudgetRejectionReason =
+  | "Preço geral"
+  | "Peças"
+  | "Mão de obra"
+  | "Prazo"
+  | "Desistência"
+  | "Outro";
 export type ServiceOrderStatus =
-  "Aguardando início" | "Em serviço" | "Finalizado" | "Entregue" | "Cancelado";
+  "Em serviço" | "Finalizado" | "Entregue" | "Cancelado";
 export type PaymentStatus = "Pendente" | "Pago parcialmente" | "Pago";
 export type PaymentMethod =
   "PIX" | "Dinheiro" | "Débito" | "Crédito" | "Transferência" | "Outro";
@@ -150,6 +157,7 @@ export interface Budget {
   number: number;
   entryId: string;
   status: BudgetStatus;
+  rejectionReason?: BudgetRejectionReason;
   parts: ServiceOrderPart[];
   labor: ServiceOrderLabor[];
   quoteMessage: string;
