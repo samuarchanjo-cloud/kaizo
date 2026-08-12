@@ -1,6 +1,13 @@
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import { BudgetEditor } from "@/components/BudgetEditor";
 import {
+  ComparisonBars,
+  HorizontalRanking,
+  LineChart,
+  ProgressRing,
+  Sparkline,
+} from "@/components/Charts";
+import {
   ClientEvidenceGallery,
   EvidenceManager,
 } from "@/components/EvidenceGallery";
@@ -77,6 +84,7 @@ type Page =
   | "more";
 type Selection = { kind: "entry" | "budget" | "order"; id: string } | null;
 type ModalName = "entry" | "appointment" | "customer" | "vehicle" | null;
+type ThemePreference = "light" | "dark" | "system";
 type DashboardListFilter =
   "active" | "todo" | "running" | "deliver-today" | "waiting-approval";
 
@@ -377,14 +385,39 @@ export default function App() {
     null,
   );
   const [toast, setToast] = useState("");
+  const [themePreference, setThemePreference] = useState<ThemePreference>(
+    () => {
+      const saved = localStorage.getItem("kaizo-theme");
+      return saved === "dark" || saved === "system" || saved === "light"
+        ? saved
+        : "light";
+    },
+  );
 
   useEffect(() => {
     if ("serviceWorker" in navigator)
       navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
   useEffect(() => {
-    document.documentElement.style.setProperty("--accent", "#E5484D");
-  }, []);
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolved =
+        themePreference === "system"
+          ? media.matches
+            ? "dark"
+            : "light"
+          : themePreference;
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.dataset.themePreference = themePreference;
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute("content", resolved === "dark" ? "#0C0C0E" : "#F6F7F9");
+    };
+    applyTheme();
+    localStorage.setItem("kaizo-theme", themePreference);
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [themePreference]);
   const commit = (next: KaizoData, message?: string) => {
     setData(next);
     localRepository.save(next);
@@ -633,7 +666,12 @@ export default function App() {
               )}
               {page === "reports" && <ReportsPage data={data} />}
               {page === "settings" && (
-                <SettingsPage data={data} onCommit={commit} />
+                <SettingsPage
+                  data={data}
+                  onCommit={commit}
+                  themePreference={themePreference}
+                  onThemeChange={setThemePreference}
+                />
               )}
               {page === "more" && <MorePage onNavigate={navigate} />}
             </>
@@ -739,6 +777,14 @@ function Dashboard({
 }) {
   const [period, setPeriod] = useState<PeriodKey>("today");
   const revenue = financeService.revenue(data, period);
+  const todayRevenue = financeService.revenue(data, "today");
+  const yesterdayRevenue = financeService.revenue(data, "yesterday");
+  const revenueVariation = yesterdayRevenue
+    ? ((todayRevenue - yesterdayRevenue) / yesterdayRevenue) * 100
+    : todayRevenue
+      ? 100
+      : 0;
+  const revenueTrend = financeService.chart(data, 7);
   const activeEntries = data.entries.filter((entry) =>
     isEntryInOperation(data, entry),
   );
@@ -829,11 +875,15 @@ function Dashboard({
         </div>
       </div>
       <section className="revenue-hero card">
-        <div>
+        <div className="revenue-copy">
           <span>{periodLabel[period]}</span>
           <strong>{currency(revenue)}</strong>
-          <small>Somente pagamentos efetivamente registrados</small>
+          <small className={revenueVariation >= 0 ? "trend-up" : "trend-down"}>
+            {revenueVariation >= 0 ? "↑" : "↓"}{" "}
+            {Math.abs(revenueVariation).toFixed(0)}% <em>vs. ontem</em>
+          </small>
         </div>
+        <Sparkline points={revenueTrend} />
         <PeriodFilter value={period} onChange={setPeriod} />
       </section>
       <section className="dashboard-shortcuts">
@@ -847,7 +897,6 @@ function Dashboard({
       <section className="card operation-today">
         <div className="section-heading">
           <div>
-            <span className="section-label">OPERAÇÃO DO DIA</span>
             <h2>Operação de hoje</h2>
             <p>Uma leitura imediata do que está acontecendo agora.</p>
           </div>
@@ -1022,7 +1071,20 @@ function OperationCard({
 }) {
   return (
     <button className={`operation-card ${tone}`} onClick={onClick}>
-      <span>{label}</span>
+      <span className="operation-card-head">
+        <Icon
+          name={
+            tone === "process"
+              ? "clock"
+              : tone === "delivery"
+                ? "check"
+                : tone === "todo"
+                  ? "orders"
+                  : "car"
+          }
+        />
+        {label}
+      </span>
       <strong>{value}</strong>
       <small>
         Abrir lista <Icon name="arrow" />
@@ -2139,34 +2201,61 @@ function CustomersPage({
             placeholder="Buscar cliente"
           />
           <div className="contact-list card">
-            {shown.map((customer) => (
-              <button
-                className="contact-row"
-                key={customer.id}
-                onClick={() => setSelectedId(customer.id)}
-              >
-                <span className="contact-avatar">
-                  {customer.name
-                    .split(" ")
-                    .map((word) => word[0])
-                    .slice(0, 2)
-                    .join("")}
-                </span>
-                <span>
-                  <strong>{customer.name}</strong>
-                  <small>{customer.phone}</small>
-                </span>
-                <span className="count-pill">
-                  {
-                    data.vehicles.filter(
-                      (vehicle) => vehicle.customerId === customer.id,
-                    ).length
-                  }{" "}
-                  veículo(s)
-                </span>
-                <Icon name="arrow" />
-              </button>
-            ))}
+            {shown.map((customer) => {
+              const customerVehicles = data.vehicles.filter(
+                (vehicle) => vehicle.customerId === customer.id,
+              );
+              const customerEntries = data.entries.filter(
+                (entry) => entry.customerId === customer.id,
+              );
+              const customerEntryIds = new Set(
+                customerEntries.map((entry) => entry.id),
+              );
+              const serviceValue = data.budgets
+                .filter(
+                  (budget) =>
+                    customerEntryIds.has(budget.entryId) &&
+                    budget.status === "Aprovado",
+                )
+                .reduce((sum, budget) => sum + orderCustomerTotal(budget), 0);
+              const lastEntry = [...customerEntries].sort(
+                (a, b) =>
+                  new Date(b.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              )[0];
+              return (
+                <button
+                  className="contact-row customer-rich-row"
+                  key={customer.id}
+                  onClick={() => setSelectedId(customer.id)}
+                >
+                  <span className="contact-avatar">
+                    {customer.name
+                      .split(" ")
+                      .map((word) => word[0])
+                      .slice(0, 2)
+                      .join("")}
+                  </span>
+                  <span className="customer-primary">
+                    <strong>{customer.name}</strong>
+                    <small>
+                      {customerVehicles[0]
+                        ? `${customerVehicles[0].brand} ${customerVehicles[0].model} · ${customerVehicles[0].plate}`
+                        : customer.phone}
+                    </small>
+                  </span>
+                  <span className="customer-metrics">
+                    <small>{customerEntries.length} atendimentos</small>
+                    <strong>{currency(serviceValue)} em serviços</strong>
+                    <small>
+                      Último atendimento:{" "}
+                      {lastEntry ? shortDate(lastEntry.createdAt) : "—"}
+                    </small>
+                  </span>
+                  <Icon name="arrow" />
+                </button>
+              );
+            })}
           </div>
         </div>
         {selected && (
@@ -2257,6 +2346,21 @@ function VehiclesPage({
   const budgets = data.budgets.filter((item) => entryIds.has(item.entryId));
   const budgetIds = new Set(budgets.map((item) => item.id));
   const orders = data.orders.filter((item) => budgetIds.has(item.budgetId));
+  const activeVehicleIds = new Set(
+    data.entries
+      .filter((entry) => isEntryInOperation(data, entry))
+      .map((entry) => entry.vehicleId),
+  );
+  const monthStart = new Date(
+    new Date().getFullYear(),
+    new Date().getMonth(),
+    1,
+  );
+  const attendedThisMonth = new Set(
+    data.entries
+      .filter((entry) => new Date(entry.createdAt) >= monthStart)
+      .map((entry) => entry.vehicleId),
+  ).size;
   const shown = data.vehicles.filter((vehicle) => {
     const customer = data.customers.find(
       (item) => item.id === vehicle.customerId,
@@ -2276,34 +2380,83 @@ function VehiclesPage({
           <Icon name="plus" /> Novo veículo
         </button>
       </div>
+      <section className="garage-metrics" aria-label="Resumo da garagem">
+        <div>
+          <span>Total cadastrados</span>
+          <strong>{data.vehicles.length}</strong>
+        </div>
+        <div>
+          <span>Em atendimento</span>
+          <strong>{activeVehicleIds.size}</strong>
+        </div>
+        <div>
+          <span>Atendidos este mês</span>
+          <strong>{attendedThisMonth}</strong>
+        </div>
+      </section>
       <div className={`master-detail ${selected ? "has-detail" : ""}`}>
         <div>
           <Search
             value={search}
             onChange={setSearch}
-            placeholder="Buscar veículo, placa ou cliente"
+            placeholder="Buscar placa, modelo ou cliente"
           />
           <div className="vehicle-grid">
-            {shown.map((vehicle) => (
-              <button
-                className="vehicle-card"
-                key={vehicle.id}
-                onClick={() => setSelectedId(vehicle.id)}
-              >
-                <div className="vehicle-visual">
+            {shown.map((vehicle) => {
+              const customer = data.customers.find(
+                (item) => item.id === vehicle.customerId,
+              );
+              const vehicleEntries = data.entries.filter(
+                (entry) => entry.vehicleId === vehicle.id,
+              );
+              const lastEntry = [...vehicleEntries].sort(
+                (a, b) =>
+                  new Date(b.createdAt).getTime() -
+                  new Date(a.createdAt).getTime(),
+              )[0];
+              const latestActiveOrder = data.orders.find((order) => {
+                const entry = data.entries.find(
+                  (item) => item.id === order.entryId,
+                );
+                return (
+                  entry?.vehicleId === vehicle.id &&
+                  order.status !== "Entregue" &&
+                  order.status !== "Cancelado"
+                );
+              });
+              return (
+                <button
+                  className="vehicle-card garage-card"
+                  key={vehicle.id}
+                  onClick={() => setSelectedId(vehicle.id)}
+                >
                   <VehicleThumbnail vehicle={vehicle} />
-                  <span>{vehicle.year}</span>
-                </div>
-                <strong>
-                  {vehicle.brand} {vehicle.model}
-                </strong>
-                <small>{vehicle.version}</small>
-                <div>
-                  <b>{vehicle.plate}</b>
-                  <span>{vehicle.mileage.toLocaleString("pt-BR")} km</span>
-                </div>
-              </button>
-            ))}
+                  <span className="garage-card-main">
+                    <strong>
+                      {vehicle.brand} {vehicle.model}
+                    </strong>
+                    <b>{vehicle.plate}</b>
+                    <small>{customer?.name}</small>
+                  </span>
+                  <span className="garage-card-data">
+                    <strong>
+                      {vehicle.mileage.toLocaleString("pt-BR")} km
+                    </strong>
+                    <StatusBadge
+                      status={latestActiveOrder?.status ?? "Disponível"}
+                    />
+                  </span>
+                  <span className="garage-card-footer">
+                    <small>
+                      Último atendimento:{" "}
+                      {lastEntry ? shortDate(lastEntry.createdAt) : "—"}
+                    </small>
+                    <small>{vehicleEntries.length} serviços registrados</small>
+                  </span>
+                  <Icon name="arrow" />
+                </button>
+              );
+            })}
           </div>
         </div>
         {selected && (
@@ -2630,7 +2783,6 @@ function FinancePage({
     period === "custom"
       ? financeService.chartRange(data, customRange)
       : financeService.chart(data, chartDays);
-  const max = Math.max(1, ...chart.map((item) => item.value));
   const received = data.payments.reduce((sum, item) => sum + item.amount, 0);
   const activeBudgets = data.budgets.filter(
     (budget) => budget.status !== "Recusado",
@@ -2683,21 +2835,7 @@ function FinancePage({
         {period === "custom" && (
           <CustomPeriodFields value={customRange} onChange={setCustomRange} />
         )}
-        <div className="revenue-chart">
-          {chart.map((item, index) => (
-            <div key={`${item.label}-${index}`}>
-              <span
-                style={{ height: `${Math.max(3, (item.value / max) * 100)}%` }}
-                title={`${item.label}: ${currency(item.value)}`}
-              />
-              <small>
-                {chart.length <= 10 || index % Math.ceil(chart.length / 8) === 0
-                  ? item.label
-                  : ""}
-              </small>
-            </div>
-          ))}
-        </div>
+        <LineChart points={chart} />
       </section>
       <section className="card receipt-history">
         <div className="card-head">
@@ -2769,6 +2907,33 @@ function ReportsPage({ data }: { data: KaizoData }) {
   const summary = reportService.summary(data, period, customRange);
   const ranking = reportService.serviceRanking(data, period, customRange);
   const profitable = [...ranking].sort((a, b) => b.profit - a.profit);
+  const composition = reportService.financialComposition(
+    data,
+    period,
+    customRange,
+  );
+  const funnel = reportService.funnel(data, period, customRange);
+  const chartDays =
+    period === "30d"
+      ? 30
+      : period === "month"
+        ? Math.max(1, new Date().getDate())
+        : period === "today" || period === "yesterday"
+          ? 7
+          : 7;
+  const trend =
+    period === "custom"
+      ? financeService.chartRange(data, customRange)
+      : financeService.chart(data, chartDays);
+  const previousRevenue = financeService.revenue(
+    data,
+    period === "today" ? "yesterday" : "30d",
+  );
+  const trendVariation = previousRevenue
+    ? ((summary.revenue - previousRevenue) / previousRevenue) * 100
+    : summary.revenue
+      ? 100
+      : 0;
   return (
     <>
       <div className="page-heading">
@@ -2781,27 +2946,47 @@ function ReportsPage({ data }: { data: KaizoData }) {
       {period === "custom" && (
         <CustomPeriodFields value={customRange} onChange={setCustomRange} />
       )}
-      <section className="report-metrics">
-        <Metric
-          label="Faturamento"
-          value={currency(summary.revenue)}
-          tone="success"
-        />
-        <Metric
-          label="Serviços realizados"
-          value={String(summary.services)}
-          tone="process"
-        />
-        <Metric
-          label="Ticket médio"
-          value={currency(summary.ticket)}
-          tone="neutral"
-        />
-        <Metric
-          label="Taxa de aprovação"
-          value={`${summary.approvalRate.toFixed(0)}%`}
-          tone="waiting"
-        />
+      <section className="card report-trend-card">
+        <div className="report-trend-copy">
+          <span>Faturamento no período</span>
+          <strong>{currency(summary.revenue)}</strong>
+          <small className={trendVariation >= 0 ? "trend-up" : "trend-down"}>
+            {trendVariation >= 0 ? "↑" : "↓"}{" "}
+            {Math.abs(trendVariation).toFixed(1)}% <em>vs. período anterior</em>
+          </small>
+        </div>
+        <LineChart points={trend} />
+      </section>
+      <section className="report-visual-grid">
+        <div className="card report-card">
+          <div className="card-head">
+            <div>
+              <h2>Receita, custos e lucro</h2>
+              <p>Composição dos serviços aprovados.</p>
+            </div>
+          </div>
+          <ComparisonBars
+            items={[
+              { label: "Receita", value: composition.revenue, tone: "revenue" },
+              { label: "Custos", value: composition.costs, tone: "cost" },
+              {
+                label: "Lucro estimado",
+                value: composition.profit,
+                tone: "profit",
+              },
+            ]}
+          />
+        </div>
+        <div className="card approval-visual-card">
+          <div>
+            <h2>Taxa de aprovação</h2>
+            <p>Orçamentos apresentados no período.</p>
+          </div>
+          <ProgressRing value={summary.approvalRate} />
+          <small>
+            {summary.approved} aprovados · {summary.rejected} recusados
+          </small>
+        </div>
       </section>
       <section className="report-grid">
         <div className="card report-card">
@@ -2811,16 +2996,11 @@ function ReportsPage({ data }: { data: KaizoData }) {
               <p>Ranking por quantidade.</p>
             </div>
           </div>
-          {ranking.slice(0, 6).map((item, index) => (
-            <div className="ranking-row" key={item.name}>
-              <b>{index + 1}</b>
-              <span>
-                <strong>{item.name}</strong>
-                <small>{item.quantity} realização(ões)</small>
-              </span>
-              <em>{item.quantity}</em>
-            </div>
-          ))}
+          <HorizontalRanking
+            items={ranking
+              .slice(0, 6)
+              .map((item) => ({ label: item.name, value: item.quantity }))}
+          />
           {ranking.length === 0 && (
             <p className="muted">Sem dados no período.</p>
           )}
@@ -2832,39 +3012,35 @@ function ReportsPage({ data }: { data: KaizoData }) {
               <p>Estimativa com os custos registrados.</p>
             </div>
           </div>
-          {profitable.slice(0, 6).map((item) => (
-            <div className="profit-row" key={item.name}>
-              <span>
-                <strong>{item.name}</strong>
-                <small>{item.quantity} venda(s)</small>
-              </span>
-              <span>
-                <small>Faturamento</small>
-                <strong>{currency(item.revenue)}</strong>
-              </span>
-              <span>
-                <small>Lucro estimado</small>
-                <strong>{currency(item.profit)}</strong>
-              </span>
-            </div>
-          ))}
+          <HorizontalRanking
+            items={profitable.slice(0, 6).map((item) => ({
+              label: item.name,
+              value: item.profit,
+              detail: `${currency(item.profit)} · ${item.revenue ? ((item.profit / item.revenue) * 100).toFixed(0) : 0}%`,
+            }))}
+          />
         </div>
       </section>
-      <section className="card approval-card">
-        <div>
-          <h2>Taxa de aprovação</h2>
-          <strong>{summary.approvalRate.toFixed(0)}%</strong>
+      <section className="card funnel-card">
+        <div className="card-head">
+          <div>
+            <h2>Funil operacional</h2>
+            <p>Conversão financeira entre as etapas.</p>
+          </div>
         </div>
-        <div>
-          <span>
-            Aprovados <b>{summary.approved}</b>
-          </span>
-          <span>
-            Recusados <b>{summary.rejected}</b>
-          </span>
-          <span>
-            Aguardando <b>{summary.waiting}</b>
-          </span>
+        <div className="funnel-flow">
+          {[
+            ["Orçado", funnel.budgeted],
+            ["Aprovado", funnel.approved],
+            ["Executado", funnel.executed],
+            ["Recebido", funnel.received],
+          ].map(([label, value], index) => (
+            <div key={String(label)}>
+              <span>{label}</span>
+              <strong>{currency(Number(value))}</strong>
+              {index < 3 && <Icon name="arrow" />}
+            </div>
+          ))}
         </div>
       </section>
     </>
@@ -2874,9 +3050,13 @@ function ReportsPage({ data }: { data: KaizoData }) {
 function SettingsPage({
   data,
   onCommit,
+  themePreference,
+  onThemeChange,
 }: {
   data: KaizoData;
   onCommit: (data: KaizoData, message?: string) => void;
+  themePreference: ThemePreference;
+  onThemeChange: (theme: ThemePreference) => void;
 }) {
   const [form, setForm] = useState(data.company);
   return (
@@ -2894,6 +3074,33 @@ function SettingsPage({
           onCommit(settingsService.update(data, form), "Configurações salvas.");
         }}
       >
+        <section className="theme-settings">
+          <div>
+            <h2>Aparência</h2>
+            <p>Escolha como o KAIZO deve aparecer neste dispositivo.</p>
+          </div>
+          <div className="theme-options" role="radiogroup" aria-label="Tema">
+            {(
+              [
+                ["light", "Claro"],
+                ["dark", "Escuro"],
+                ["system", "Sistema"],
+              ] as Array<[ThemePreference, string]>
+            ).map(([value, label]) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={themePreference === value}
+                className={themePreference === value ? "active" : ""}
+                key={value}
+                onClick={() => onThemeChange(value)}
+              >
+                <span className={`theme-preview theme-preview-${value}`} />
+                <strong>{label}</strong>
+              </button>
+            ))}
+          </div>
+        </section>
         <div className="form-grid">
           <Field label="Nome da empresa">
             <input
@@ -2941,7 +3148,7 @@ function SettingsPage({
           <span className="brand-swatch" />
           <div>
             <strong>Identidade oficial KAIZO</strong>
-            <small>Dark Graphite + Red Coral · #E5484D</small>
+            <small>Graphite + Red Coral · temas claro e escuro</small>
           </div>
         </div>
         <div className="form-footer">

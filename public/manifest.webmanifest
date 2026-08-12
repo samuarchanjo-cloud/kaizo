@@ -4,8 +4,8 @@
   "description": "Gestão completa de serviços automotivos.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0C0C0E",
-  "theme_color": "#0C0C0E",
+  "background_color": "#F6F7F9",
+  "theme_color": "#D83A40",
   "icons": [
     {
       "src": "/kaizo-logo.png",

@@ -70,7 +70,7 @@ export function VehicleThumbnail({
       aria-label={label}
     >
       <svg viewBox="0 0 120 64" aria-hidden="true">
-        <ellipse cx="61" cy="49" rx="49" ry="5" fill="rgba(0,0,0,.28)" />
+        <ellipse cx="61" cy="49" rx="47" ry="4" fill="rgba(0,0,0,.18)" />
         <path
           d={bodyPaths[category]}
           fill={paint}
@@ -86,12 +86,12 @@ export function VehicleThumbnail({
                 ? "M25 17H77Q83 18 89 28H22L23 21Q23 18 25 17Z"
                 : "M39 21H66Q73 22 79 30H29Q32 24 39 21Z"
           }
-          fill="#20242B"
+          fill="#30343A"
           stroke="#A1A1AA"
           strokeOpacity=".45"
         />
         <path d="M61 21V30" stroke="#A1A1AA" strokeOpacity=".42" />
-        <path d="M18 39H104" stroke="#FFFFFF" strokeOpacity=".2" />
+        <path d="M18 39H104" stroke="#FFFFFF" strokeOpacity=".12" />
         <circle
           cx="31"
           cy="44"
@@ -110,7 +110,7 @@ export function VehicleThumbnail({
           strokeWidth="2"
         />
         <circle cx="91" cy="44" r="3" fill="#A1A1AA" />
-        <path d="M99 35 108 38 106 41H100Z" fill="#FFB4B7" />
+        <path d="M99 35 108 38 106 41H100Z" fill="#D4D4D8" fillOpacity=".7" />
       </svg>
     </span>
   );

@@ -18,12 +18,7 @@ import type {
 } from "./types";
 
 export type PeriodKey =
-  | "today"
-  | "yesterday"
-  | "7d"
-  | "30d"
-  | "month"
-  | "custom";
+  "today" | "yesterday" | "7d" | "30d" | "month" | "custom";
 export type DateRange = { start: string; end: string };
 export const createId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -496,5 +491,51 @@ export const reportService = {
         });
       });
     return [...totals.values()].sort((a, b) => b.quantity - a.quantity);
+  },
+  financialComposition(data: KaizoData, period: PeriodKey, range?: DateRange) {
+    const budgets = data.budgets.filter(
+      (budget) =>
+        budget.status === "Aprovado" &&
+        inPeriod(budget.updatedAt, period, range),
+    );
+    const revenue = budgets.reduce(
+      (sum, budget) => sum + orderCustomerTotal(budget),
+      0,
+    );
+    const costs = budgets.reduce(
+      (sum, budget) => sum + orderRealCost(budget),
+      0,
+    );
+    return { revenue, costs, profit: revenue - costs };
+  },
+  funnel(data: KaizoData, period: PeriodKey, range?: DateRange) {
+    const budgeted = data.budgets
+      .filter(
+        (budget) =>
+          ["Aguardando aprovação", "Aprovado", "Recusado"].includes(
+            budget.status,
+          ) && inPeriod(budget.updatedAt, period, range),
+      )
+      .reduce((sum, budget) => sum + orderCustomerTotal(budget), 0);
+    const approved = data.budgets
+      .filter(
+        (budget) =>
+          budget.status === "Aprovado" &&
+          inPeriod(budget.updatedAt, period, range),
+      )
+      .reduce((sum, budget) => sum + orderCustomerTotal(budget), 0);
+    const executed = data.orders
+      .filter(
+        (order) =>
+          ["Finalizado", "Entregue"].includes(order.status) &&
+          inPeriod(order.updatedAt, period, range),
+      )
+      .reduce((sum, order) => sum + financeService.orderTotal(data, order), 0);
+    return {
+      budgeted,
+      approved,
+      executed,
+      received: financeService.revenue(data, period, range),
+    };
   },
 };
