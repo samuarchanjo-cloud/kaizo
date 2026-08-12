@@ -894,11 +894,11 @@ function Dashboard({
           <Icon name="agenda" /> Novo agendamento
         </button>
       </section>
-      <section className="card operation-today">
+      <section className="operation-today" aria-label="Operação de hoje">
         <div className="section-heading">
           <div>
             <h2>Operação de hoje</h2>
-            <p>Uma leitura imediata do que está acontecendo agora.</p>
+            <p>Leitura rápida do fluxo atual.</p>
           </div>
         </div>
         <div className="operation-grid">
@@ -928,7 +928,7 @@ function Dashboard({
           />
         </div>
       </section>
-      <section className="card service-today">
+      <section className="card service-today service-today-primary">
         <div className="card-head">
           <div>
             <h2>Serviços de hoje</h2>
@@ -1086,9 +1086,7 @@ function OperationCard({
         {label}
       </span>
       <strong>{value}</strong>
-      <small>
-        Abrir lista <Icon name="arrow" />
-      </small>
+      <Icon name="arrow" />
     </button>
   );
 }
@@ -1463,8 +1461,8 @@ function EntryDetail({
         ))}
       </div>
       {tab === "summary" && (
-        <div className="detail-grid">
-          <section className="card detail-card">
+        <div className="entry-summary-layout">
+          <section className="card detail-card entry-summary-card">
             <h2>Problema relatado</h2>
             <p className="detail-copy">{draft.reportedProblem}</p>
             <h3>Observações técnicas</h3>
@@ -1472,14 +1470,33 @@ function EntryDetail({
               {draft.technicalNotes || "Diagnóstico ainda não registrado."}
             </p>
           </section>
-          <aside className="card detail-card stage-card">
-            <h2>Próxima etapa</h2>
+          <aside className="card detail-card entry-actions-card">
+            <h2>Ações do atendimento</h2>
+            <p>Registre somente o que fizer sentido neste momento.</p>
+            <div className="entry-action-grid">
+              <button
+                className="secondary-button"
+                onClick={() => setTab("diagnosis")}
+              >
+                <Icon name="edit" /> Registrar diagnóstico
+              </button>
+              <button
+                className="secondary-button"
+                onClick={() => setTab("evidence")}
+              >
+                <Icon name="camera" /> Adicionar evidência
+              </button>
+              {!budget && (
+                <button className="primary-button" onClick={createBudget}>
+                  <Icon name="budgets" /> Criar orçamento
+                </button>
+              )}
+            </div>
             {budget ? (
-              <>
+              <div className="linked-budget-note">
                 <StatusBadge status={budget.status} />
                 <p>
-                  O orçamento #{budget.number} já está vinculado a este
-                  atendimento.
+                  Orçamento #{budget.number} vinculado a este atendimento.
                 </p>
                 <button
                   className="primary-button full"
@@ -1487,17 +1504,11 @@ function EntryDetail({
                 >
                   Abrir orçamento
                 </button>
-              </>
+              </div>
             ) : (
-              <>
-                <p>
-                  Conclua o diagnóstico e inicie uma proposta comercial
-                  separada.
-                </p>
-                <button className="primary-button full" onClick={createBudget}>
-                  Criar orçamento
-                </button>
-              </>
+              <small className="entry-action-hint">
+                O orçamento pode ser criado agora e complementado depois.
+              </small>
             )}
           </aside>
         </div>
@@ -2172,6 +2183,9 @@ function CustomersPage({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [profileTab, setProfileTab] = useState<
+    "data" | "vehicles" | "history" | "finance"
+  >("data");
   const selected = data.customers.find((item) => item.id === selectedId);
   const shown = data.customers.filter((item) =>
     `${item.name} ${item.phone} ${item.cpf ?? ""}`
@@ -2182,6 +2196,14 @@ function CustomersPage({
   const entryIds = new Set(entries.map((item) => item.id));
   const budgets = data.budgets.filter((item) => entryIds.has(item.entryId));
   const orders = data.orders.filter((item) => entryIds.has(item.entryId));
+  const orderIds = new Set(orders.map((item) => item.id));
+  const payments = data.payments.filter((item) => orderIds.has(item.orderId));
+  const received = payments
+    .filter((item) => item.status !== "Pendente")
+    .reduce((sum, item) => sum + item.amount, 0);
+  const approvedTotal = budgets
+    .filter((item) => item.status === "Aprovado")
+    .reduce((sum, item) => sum + orderCustomerTotal(item), 0);
   return (
     <>
       <div className="page-heading">
@@ -2227,7 +2249,10 @@ function CustomersPage({
                 <button
                   className="contact-row customer-rich-row"
                   key={customer.id}
-                  onClick={() => setSelectedId(customer.id)}
+                  onClick={() => {
+                    setSelectedId(customer.id);
+                    setProfileTab("data");
+                  }}
                 >
                   <span className="contact-avatar">
                     {customer.name
@@ -2273,50 +2298,80 @@ function CustomersPage({
                 <Icon name="edit" /> Editar
               </button>
             </div>
-            <h3>Veículos</h3>
-            {data.vehicles
-              .filter((vehicle) => vehicle.customerId === selected.id)
-              .map((vehicle) => (
-                <div className="mini-card" key={vehicle.id}>
-                  <strong>
-                    {vehicle.brand} {vehicle.model}
-                  </strong>
-                  <span>{vehicle.plate}</span>
-                </div>
+            <div className="profile-tabs" role="tablist">
+              {[
+                ["data", "Dados"],
+                ["vehicles", "Veículos"],
+                ["history", "Histórico"],
+                ["finance", "Financeiro"],
+              ].map(([id, label]) => (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={profileTab === id}
+                  className={profileTab === id ? "active" : ""}
+                  key={id}
+                  onClick={() => setProfileTab(id as typeof profileTab)}
+                >
+                  {label}
+                </button>
               ))}
-            <h3>Atendimentos</h3>
-            {entries.slice(0, 3).map((entry) => (
-              <button
-                className="mini-card clickable"
-                key={entry.id}
-                onClick={() => onOpen("entry", entry.id)}
-              >
-                <strong>#{entry.number}</strong>
-                <StatusBadge status={entry.status} />
-              </button>
-            ))}
-            <h3>Orçamentos</h3>
-            {budgets.slice(0, 3).map((budget) => (
-              <button
-                className="mini-card clickable"
-                key={budget.id}
-                onClick={() => onOpen("budget", budget.id)}
-              >
-                <strong>#{budget.number}</strong>
-                <StatusBadge status={budget.status} />
-              </button>
-            ))}
-            <h3>Ordens de serviço</h3>
-            {orders.slice(0, 3).map((order) => (
-              <button
-                className="mini-card clickable"
-                key={order.id}
-                onClick={() => onOpen("order", order.id)}
-              >
-                <strong>OS #{order.number}</strong>
-                <StatusBadge status={order.status} />
-              </button>
-            ))}
+            </div>
+            {profileTab === "data" && (
+              <div className="profile-section">
+                <h3>Dados do cliente</h3>
+                <div className="mini-card">
+                  <span><small>Telefone</small><strong>{selected.phone}</strong></span>
+                </div>
+                <div className="mini-card">
+                  <span><small>CPF/CNPJ</small><strong>{selected.cpf || "Não informado"}</strong></span>
+                </div>
+                <div className="mini-card">
+                  <span><small>Observações</small><strong>{selected.notes || "Nenhuma observação"}</strong></span>
+                </div>
+              </div>
+            )}
+            {profileTab === "vehicles" && (
+              <div className="profile-section">
+                <h3>Veículos</h3>
+                {data.vehicles
+                  .filter((vehicle) => vehicle.customerId === selected.id)
+                  .map((vehicle) => (
+                    <div className="mini-card" key={vehicle.id}>
+                      <VehicleThumbnail vehicle={vehicle} />
+                      <span><strong>{vehicle.brand} {vehicle.model}</strong><small>{vehicle.plate}</small></span>
+                    </div>
+                  ))}
+              </div>
+            )}
+            {profileTab === "history" && (
+              <div className="profile-section">
+                <h3>Atendimentos, orçamentos e OS</h3>
+                {entries.slice(0, 3).map((entry) => (
+                  <button className="mini-card clickable" key={entry.id} onClick={() => onOpen("entry", entry.id)}>
+                    <strong>Atendimento #{entry.number}</strong><StatusBadge status={entry.status} />
+                  </button>
+                ))}
+                {budgets.slice(0, 3).map((budget) => (
+                  <button className="mini-card clickable" key={budget.id} onClick={() => onOpen("budget", budget.id)}>
+                    <strong>Orçamento #{budget.number}</strong><StatusBadge status={budget.status} />
+                  </button>
+                ))}
+                {orders.slice(0, 3).map((order) => (
+                  <button className="mini-card clickable" key={order.id} onClick={() => onOpen("order", order.id)}>
+                    <strong>OS #{order.number}</strong><StatusBadge status={order.status} />
+                  </button>
+                ))}
+              </div>
+            )}
+            {profileTab === "finance" && (
+              <div className="profile-section customer-finance-summary">
+                <h3>Resumo financeiro</h3>
+                <div className="mini-card"><span><small>Serviços aprovados</small><strong>{currency(approvedTotal)}</strong></span></div>
+                <div className="mini-card"><span><small>Recebido</small><strong>{currency(received)}</strong></span></div>
+                <div className="mini-card"><span><small>Saldo relacionado</small><strong>{currency(Math.max(0, approvedTotal - received))}</strong></span></div>
+              </div>
+            )}
           </aside>
         )}
       </div>

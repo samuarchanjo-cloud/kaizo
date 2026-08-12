@@ -610,7 +610,7 @@ export function NewEntryModal({
                   >
                     {manualVehicle
                       ? "Usar catálogo de veículos"
-                      : "Não encontrou? Preencher manualmente"}
+                      : "Não encontrou o modelo? Preencher manualmente."}
                   </button>
                   <VehiclePreview
                     vehicle={{
